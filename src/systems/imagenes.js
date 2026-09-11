@@ -93,8 +93,9 @@ function buscarTag(tags, claves) {
 }
 
 /**
- * Inferencia agresiva: el texto manda.
- * Si hay acción sexual/física clara, casi nunca devuelve "hablando".
+ * Inferencia: reglas de más ESPECÍFICAS a más genéricas.
+ * punta/mitad van ANTES que "todo" / deepthroat.
+ * "garganta" sola NO cuenta como deepthroat.
  */
 export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex = false) {
   let tags = listarTags(chica);
@@ -104,18 +105,36 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
   }
   if (!tags.length) return 'hablando';
 
-  const t = `${textoBot || ''} ${textoUsuario || ''}`.toLowerCase()
-    .normalize('NFD').replace(/\p{M}/gu, ''); // quitar tildes para matchear mejor
+  const t = `${textoBot || ''} ${textoUsuario || ''}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '');
 
-  // Reglas ordenadas de más específica a más genérica
   const reglas = [
-    // --- ORAL detallado ---
-    { rx: /deepthroat|garganta|hasta el fondo|se la traga entera|chupando_todo/, claves: ['chupando_todo_el_pene', 'chupando_todo', 'deep'] },
-    { rx: /solo la punta|la punta del|chupa.*(punta|cabeza)|cabeza del pene|cabeza de la pija/, claves: ['chupando_solo_la_punta', 'punta'] },
-    { rx: /hasta la mitad|chupa.*(mitad)/, claves: ['chupando_solo_la_mitad', 'mitad'] },
-    { rx: /chupando_bolas|las bolas|testiculos|lamiendo.*bolas/, claves: ['chupando_bolas', 'bolas', 'chupando_bola'] },
-    { rx: /69/, claves: ['69'] },
-    { rx: /chup|mam[ao]|oral|blowjob|en (tu|la|mi) boca|lamiendo.*(pene|verga|pija)|te la chupo|me la chupa/, claves: ['chupando_todo_el_pene', 'chupando', 'lamiendo_pene', 'oral', '69'] },
+    // --- ORAL: primero los niveles específicos ---
+    {
+      rx: /solo la punta|la punta del|chupa.*(punta|cabeza)|cabeza del pene|cabeza de la pija|punta de (tu|su|la)/,
+      claves: ['chupando_solo_la_punta', 'punta']
+    },
+    {
+      rx: /hasta la mitad|la mitad de|chupa.*(mitad)|mitad de (tu|su|la) (polla|pija|verga|pene)|recorre la mitad/,
+      claves: ['chupando_solo_la_mitad', 'mitad']
+    },
+    // deepthroat SOLO con señales fuertes (NO "garganta" sola)
+    {
+      rx: /deepthroat|hasta el fondo|se la traga entera|chupando_todo|toda la (pija|verga|polla|pene)|entera en (la|su) boca/,
+      claves: ['chupando_todo_el_pene', 'chupando_todo', 'deep']
+    },
+    {
+      rx: /chupando_bolas|las bolas|testiculos|lamiendo.*bolas/,
+      claves: ['chupando_bolas', 'bolas', 'chupando_bola']
+    },
+    { rx: /\b69\b/, claves: ['69'] },
+    // oral genérico → preferir "todo" solo si existe; si no, cualquier chup
+    {
+      rx: /chup|mam[ao]|oral|blowjob|en (tu|la|mi) boca|lamiendo.*(pene|verga|pija|polla)|te la chupo|me la chupa/,
+      claves: ['chupando_solo_la_mitad', 'chupando_todo_el_pene', 'chupando', 'lamiendo_pene', 'oral', '69']
+    },
 
     // --- POSICIONES ---
     { rx: /doggy|a cuatro|por detras|desde atras|de perrito|de espaldas/, claves: ['doggystyle', 'doggy'] },
@@ -168,7 +187,7 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
     { rx: /post_sexo|semen_derram|leche.*(culo|concha|pecho|tetas)/, claves: ['post_sexo', 'semen'] },
     { rx: /me corro|te corres|se corre|cumming|corrida|acabo/, claves: ['corro', 'cum', 'anal_cumming', 'post_sexo'] },
 
-    // --- FOLLÁR genérico (último recurso de sexo) ---
+    // --- FOLLÁR genérico ---
     { rx: /foll|te penetro|te la meto|metela|dentro de (mi|ti)|te cojo|cogiendo/, claves: ['doggystyle', 'misionero', 'cowgirl', 'foll'] }
   ];
 
@@ -181,9 +200,6 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
   return tags.includes('hablando') ? 'hablando' : tags[0];
 }
 
-/**
- * Normaliza cualquier tag a uno válido de la chica.
- */
 export function normalizarTag(chica, tag, soloNoSex = false) {
   let tags = listarTags(chica);
   if (soloNoSex) {
@@ -211,10 +227,6 @@ export function normalizarTag(chica, tag, soloNoSex = false) {
   return tags.includes('hablando') ? 'hablando' : tags[0];
 }
 
-/**
- * Resuelve URL/audio. soloNoSex solo se aplica si el tag pedido es sex
- * y realmente estamos en modo no-sex.
- */
 export function resolverImagen(chica, tag = 'hablando', soloNoSex = false) {
   const d = QuintiImagenesPrueba?.[chica];
   if (!d) return { url: '', audio: '', descripcion: '', tag: 'hablando' };
