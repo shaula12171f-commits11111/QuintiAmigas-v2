@@ -111,7 +111,9 @@
       border-radius: 12px; margin-top: 10px; border: 2px solid var(--line-dim); background: #111;
     }
     .msg.bot .cap { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
-    .msg.bot audio { display: block; width: min(100%, 420px); margin-top: 8px; }
+    .msg.bot audio {
+      display: block; width: min(100%, 420px); margin-top: 8px;
+    }
     .row { display: flex; gap: 8px; }
     .row input {
       flex: 1; padding: 14px 16px; border-radius: 16px; border: 2px solid var(--line);
@@ -175,7 +177,7 @@
         <input id="input" placeholder="Escribí algo..." />
         <button class="btn" id="send">Enviar</button>
       </div>
-      <p class="hint">Mencioná a otra hermana para que se sume al chat · audio en loop · imágenes grandes</p>
+      <p class="hint">Mencioná contexto o a otra hermana / Aldo para que se sumen · un solo audio bajo la imagen</p>
     </div>
   </section>
 
@@ -198,31 +200,33 @@
     const screens = ['screen-name', 'screen-select', 'screen-modo', 'screen-chat'];
     let chicaActual = null;
     let busy = false;
-    let currentAudio = null;
+    /** Solo el <audio> DOM que está debajo de la imagen actual */
+    let activeAudioEl = null;
 
     function show(id) {
       screens.forEach((s) => $(s).classList.toggle('active', s === id));
     }
 
-    function stopAudio() {
-      if (currentAudio) {
-        currentAudio.pause();
-        currentAudio = null;
+    function stopAllAudio() {
+      // Pausar el activo
+      if (activeAudioEl) {
+        try {
+          activeAudioEl.pause();
+          activeAudioEl.currentTime = 0;
+        } catch (_) {}
+        activeAudioEl = null;
       }
-    }
-
-    function playLoop(url) {
-      stopAudio();
-      if (!url) return;
-      const a = new Audio(url);
-      a.loop = true;
-      a.play().catch(() => {});
-      currentAudio = a;
+      // Por si quedó algún otro audio en el DOM
+      document.querySelectorAll('#msgs audio').forEach((a) => {
+        try {
+          a.pause();
+        } catch (_) {}
+      });
     }
 
     function fmtText(text) {
       return String(text || '')
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>')
         .replace(/\*([^*]+)\*/g, '<em>*$1*</em>');
     }
 
@@ -257,13 +261,19 @@
         c.textContent = part.descripcionImg;
         el.appendChild(c);
       }
+      // UN SOLO audio: el que está debajo de la imagen, con controles, autoplay, loop
       if (part.audioUrl) {
+        stopAllAudio();
         const au = document.createElement('audio');
         au.controls = true;
         au.loop = true;
+        au.preload = 'auto';
         au.src = part.audioUrl;
         el.appendChild(au);
-        playLoop(part.audioUrl);
+        activeAudioEl = au;
+        // Autoplay; el usuario puede pausar con los controles nativos
+        const p = au.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
       }
       $('msgs').appendChild(el);
       $('msgs').scrollTop = $('msgs').scrollHeight;
@@ -315,13 +325,13 @@
     }
 
     $('btn-volver-selector').onclick = () => {
-      stopAudio();
+      stopAllAudio();
       volverAlSelector();
       show('screen-select');
     };
 
     $('btn-chat-libre').onclick = () => {
-      stopAudio();
+      stopAllAudio();
       iniciarChatLibre(chicaActual);
       $('msgs').innerHTML = '';
       $('chat-who').textContent = chicaActual;
@@ -331,7 +341,7 @@
     };
 
     function startHistoria(nombre, id) {
-      stopAudio();
+      stopAllAudio();
       const bien = iniciarHistoria(nombre, id);
       $('msgs').innerHTML = '';
       addBotPart({
@@ -381,14 +391,14 @@
     $('send').onclick = send;
     $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
     $('btn-reset').onclick = () => {
-      stopAudio();
+      stopAllAudio();
       resetChat();
       $('msgs').innerHTML = '';
       const st = getEstado();
       $('chat-meta').textContent = `fase: ${st.fase}`;
     };
     $('btn-salir-chat').onclick = () => {
-      stopAudio();
+      stopAllAudio();
       volverAlSelector();
       $('msgs').innerHTML = '';
       show('screen-select');
