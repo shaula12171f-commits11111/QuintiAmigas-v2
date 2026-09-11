@@ -52,7 +52,6 @@ const PATRON_LUGAR_PRIVADO = /\b(hotel|motel|habitaci[oó]n|casa|departamento|de
 const PATRON_CONFIRMACION = /\b(s[ií]|claro|vamos|dale|quiero|contin[uú]a|continuar|foll|chup|besame|t[oó]came|hazlo|hacelo|por favor|ya)\b/i;
 const PATRON_NEGACION = /\b(no|para|espera|despacio|mejor no|ahora no)\b/i;
 const PATRON_SEXO = /\b(foll|chup|mamad|pija|verga|pene|coño|concha|culo|anal|corr|semen|tetas?|pez[oó]n|dedo|69|doggy|misioner|cowgirl|handjob|paja|desnud|beso.*sucio|te la meto|métela|cog)/i;
-// Acción física o sexual (si matchea, el tag NO debería ser hablando)
 const PATRON_ACCION = /chup|mam[ao]|foll|cog|beso|besarte|desnud|teta|pecho|dedo|paja|handjob|nalg|doggy|mision|cowgirl|anal|69|corr|semen|agarra|mont[aá]|de pie|ventana|sujetador|lencer|pene|verga|pija|concha|culo|ano|met[eo]|penetr/i;
 
 function log(...args) {
@@ -113,7 +112,6 @@ export function iniciarHistoria(chica, historiaId) {
     estado.fase = FASE.INTIMO;
   }
 
-  // En historias con acción, NO forzar no-sex
   const soloNoSex = estado.fase !== FASE.INTIMO && !PATRON_SEXO.test(texto);
   const tagInferido = inferirTagFuerte(chica, texto, '', soloNoSex);
   const media = resolverImagen(chica, tagInferido, soloNoSex);
@@ -193,7 +191,6 @@ function actualizarFaseSegunUsuario(mensaje) {
     if (PATRON_CONFIRMACION.test(m) && !/^no\b/i.test(m.trim())) estado.fase = FASE.INTIMO;
     else if (PATRON_NEGACION.test(m)) estado.fase = FASE.NORMAL;
   }
-  // Si el usuario ya mete sexo explícito, subir a íntimo
   if (estado.fase !== FASE.INTIMO && PATRON_SEXO.test(m) && /chup|foll|met[eo]|cog|mam[ao]/i.test(m)) {
     estado.fase = FASE.INTIMO;
   }
@@ -217,7 +214,7 @@ function construirContexto() {
     lineas.push('Aún NO sexo explícito: llegada + pedir confirmación.');
   }
   if (estado.fase === FASE.INTIMO) {
-    lineas.push('Escena íntima activa: sé explícita, sucia y en el momento. Elegí imagen_tag de la acción que estás haciendo AHORA (chupando, doggy, etc), NO "hablando".');
+    lineas.push('Escena íntima activa: sé explícita, sucia y en el momento. Elegí imagen_tag de la acción que estás haciendo AHORA (chupando_solo_la_mitad_del_pene, doggy, etc), NO "hablando".');
   } else {
     lineas.push('Escena SIN sexo explícito ahora: usá imagen_tag no-sex (hablando, ropa_*, besando, desnuda...).');
   }
@@ -317,43 +314,62 @@ function partirBloquesMulti(texto, chicaDefault) {
   return bloques.length ? bloques : [{ chica: chicaDefault, texto: texto.trim() }];
 }
 
+/** True si el tag es un nivel oral específico (punta/mitad/todo) */
+function esTagOralEspecifico(tag) {
+  const t = String(tag || '').toLowerCase();
+  return /punta|mitad|todo_el_pene|chupando_todo/.test(t);
+}
+
 /**
- * REGLA DE ORO:
- * Si el texto describe una acción → el tag sale de la inferencia del texto.
- * El imagen_tag del modelo solo se usa si el texto no da pistas claras.
+ * Prioridad:
+ * 1. Si el MODELO dio un tag específico válido (no hablando) → confiar en el modelo
+ *    (salvo que el texto pida explícitamente otro nivel: punta/mitad/todo).
+ * 2. Si el modelo puso "hablando" pero hay acción → usar inferencia.
+ * 3. Si no hay acción → modelo o hablando.
  */
 function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
   const combinado = `${textoBloque || ''} ${textoUsuario || ''}`;
   const hayAccion = PATRON_ACCION.test(combinado);
 
-  // 1) Siempre inferir desde el texto
   const tagInferido = inferirTagFuerte(chica, textoBloque, textoUsuario, soloNoSex);
-
-  // 2) Normalizar lo que mandó el modelo
   const tagModeloNorm = normalizarTag(chica, tagModelo || 'hablando', soloNoSex);
 
   let elegido;
+  let razon = '';
+
+  // Señal explícita del usuario/texto sobre el NIVEL de oral
+  const pidePunta = /solo la punta|la punta|cabeza del/i.test(combinado);
+  const pideMitad = /hasta la mitad|la mitad|mitad de/i.test(combinado);
+  const pideTodo = /hasta el fondo|toda la (pija|verga|polla)|deepthroat|entera/i.test(combinado);
 
   if (hayAccion) {
-    // Hay acción en el texto → priorizar SIEMPRE el inferido (salvo que sea hablando y el modelo dio algo mejor)
-    if (tagInferido && tagInferido !== 'hablando') {
-      elegido = tagInferido;
+    // Si el texto pide un nivel concreto de oral, respetarlo
+    if (pidePunta || pideMitad || pideTodo) {
+      elegido = tagInferido !== 'hablando' ? tagInferido : tagModeloNorm;
+      razon = 'nivel oral explícito en texto → inferido';
     } else if (tagModeloNorm && tagModeloNorm !== 'hablando') {
+      // Modelo dio algo útil y específico → confiar (era el bug: se pisaba mitad con todo)
       elegido = tagModeloNorm;
+      razon = 'modelo específico válido';
+    } else if (tagInferido && tagInferido !== 'hablando') {
+      elegido = tagInferido;
+      razon = 'modelo=hablando, inferido por acción';
     } else {
-      elegido = tagInferido || tagModeloNorm || 'hablando';
+      elegido = tagModeloNorm || tagInferido || 'hablando';
+      razon = 'fallback';
     }
   } else {
-    // Sin acción clara → confiar más en el modelo, o hablando
     if (tagModeloNorm && tagModeloNorm !== 'hablando') {
       elegido = tagModeloNorm;
+      razon = 'sin acción, modelo';
     } else {
       elegido = tagInferido || 'hablando';
+      razon = 'sin acción, default';
     }
   }
 
   elegido = normalizarTag(chica, elegido, soloNoSex);
-  return { elegido, tagModeloNorm, tagInferido, hayAccion };
+  return { elegido, tagModeloNorm, tagInferido, hayAccion, razon };
 }
 
 export async function enviarMensaje(mensajeUsuario) {
@@ -370,7 +386,6 @@ export async function enviarMensaje(mensajeUsuario) {
 
   actualizarFaseSegunUsuario(mensajeUsuario);
 
-  // soloNoSex: solo si NO es escena sexual
   const escenaSex = esEscenaSex() || PATRON_SEXO.test(mensajeUsuario);
   const soloNoSex = !escenaSex;
 
@@ -464,7 +479,6 @@ export async function enviarMensaje(mensajeUsuario) {
     }
   }
 
-  // Recalcular después de la respuesta
   const ahoraEscenaSex = esEscenaSex() || PATRON_SEXO.test(parsed.respuesta) || PATRON_SEXO.test(mensajeUsuario);
   const ahoraSoloNoSex = !ahoraEscenaSex;
 
@@ -481,7 +495,7 @@ export async function enviarMensaje(mensajeUsuario) {
       };
     }
 
-    const { elegido, tagModeloNorm, tagInferido, hayAccion } = elegirTag(
+    const { elegido, tagModeloNorm, tagInferido, hayAccion, razon } = elegirTag(
       b.chica,
       parsed.imagen_tag,
       b.texto,
@@ -496,6 +510,7 @@ export async function enviarMensaje(mensajeUsuario) {
       tagModeloNorm,
       tagInferido,
       hayAccion,
+      razon,
       tagElegido: elegido,
       tagFinal: media.tag,
       soloNoSex: ahoraSoloNoSex,
