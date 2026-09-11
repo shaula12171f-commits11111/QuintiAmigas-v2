@@ -5,6 +5,6 @@ export const GROQ_KEYS = [
   // "gsk_..."
 ];
 
-export const MODELO = "llama-3.3-70b-versatile";
+export const MODELO = "openai/gpt-oss-120b";
 
 export const NOMBRE_USUARIO_DEFAULT = "Fabrizio";
