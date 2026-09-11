@@ -137,7 +137,6 @@
   </style>
 </head>
 <body>
-  <!-- 1. NOMBRE -->
   <section id="screen-name" class="screen active">
     <div class="name-box">
       <h1>QuintiAmigas v2</h1>
@@ -147,7 +146,6 @@
     </div>
   </section>
 
-  <!-- 2. SELECTOR DE CHICAS -->
   <section id="screen-select" class="screen">
     <h1>Elegí una chica</h1>
     <p class="sub" id="saludo-nombre">Hola</p>
@@ -155,7 +153,6 @@
     <p class="hint" style="margin-top:20px">Solo selector — el chat se abre después</p>
   </section>
 
-  <!-- 3. MODO: libre / historias -->
   <section id="screen-modo" class="screen">
     <div class="modo-head">
       <img id="modo-avatar" alt="" />
@@ -173,7 +170,6 @@
     </div>
   </section>
 
-  <!-- 4. CHAT -->
   <section id="screen-chat" class="screen">
     <div class="chat-shell">
       <div class="chat-top">
@@ -191,7 +187,7 @@
         <input id="input" placeholder="Escribí algo..." />
         <button class="btn" id="send">Enviar</button>
       </div>
-      <p class="hint">Mencioná contexto o a otra hermana / Aldo · 👍/👎 bajo cada respuesta · abrí la consola (F12) para ver tags</p>
+      <p class="hint">Mencioná contexto o a otra hermana / Aldo · 👍/👎 bajo cada respuesta · F12 = consola de tags</p>
     </div>
   </section>
 
@@ -217,7 +213,6 @@
     let activeAudioEl = null;
     let msgCounter = 0;
 
-    // --- Feedback local (casi cero costo: solo localStorage) ---
     const FB_KEY = 'quinti_feedback_v1';
     function loadFeedback() {
       try {
@@ -228,7 +223,6 @@
     }
     function saveFeedback(data) {
       try {
-        // Guardar solo los últimos 200 votos para no inflar storage
         data.items = (data.items || []).slice(-200);
         localStorage.setItem(FB_KEY, JSON.stringify(data));
       } catch (_) {}
@@ -237,18 +231,10 @@
       const data = loadFeedback();
       if (voto === 'up') data.up = (data.up || 0) + 1;
       if (voto === 'down') data.down = (data.down || 0) + 1;
-      data.items.push({
-        v: voto,
-        chica: meta.chica || '',
-        tag: meta.tag || '',
-        t: Date.now()
-      });
+      data.items.push({ v: voto, chica: meta.chica || '', tag: meta.tag || '', t: Date.now() });
       saveFeedback(data);
       console.log('%c[Feedback]', 'color:#22c55e;font-weight:bold',
-        voto === 'up' ? '👍' : '👎',
-        meta,
-        `| total 👍${data.up} 👎${data.down}`
-      );
+        voto === 'up' ? '👍' : '👎', meta, `| total 👍${data.up} 👎${data.down}`);
     }
 
     function show(id) {
@@ -264,7 +250,7 @@
         activeAudioEl = null;
       }
       document.querySelectorAll('#msgs audio').forEach((a) => {
-        try { a.pause(); } catch (_) {}
+        try { a.pause(); a.currentTime = 0; } catch (_) {}
       });
     }
 
@@ -285,10 +271,13 @@
     }
 
     function addBotPart(part) {
+      // SIEMPRE cortar el audio anterior al llegar un mensaje nuevo del bot
+      // (tenga o no audio este mensaje)
+      stopAllAudio();
+
       const el = document.createElement('div');
       el.className = 'msg bot';
-      const id = 'msg-' + (++msgCounter);
-      el.dataset.msgId = id;
+      el.dataset.msgId = 'msg-' + (++msgCounter);
 
       const tag = document.createElement('div');
       tag.className = 'who-tag';
@@ -312,8 +301,9 @@
         c.textContent = part.descripcionImg;
         el.appendChild(c);
       }
+
+      // Solo si ESTE mensaje trae audio → crear el player y autoplay
       if (part.audioUrl) {
-        stopAllAudio();
         const au = document.createElement('audio');
         au.controls = true;
         au.loop = true;
@@ -325,7 +315,6 @@
         if (p && typeof p.catch === 'function') p.catch(() => {});
       }
 
-      // Feedback 👍 / 👎 (local, sin API)
       if (part.chica && part.chica !== 'Sistema') {
         const fb = document.createElement('div');
         fb.className = 'feedback';
@@ -339,7 +328,6 @@
         btnDown.title = 'Mala respuesta / tag incorrecto';
         const status = document.createElement('span');
         status.className = 'fb-status';
-
         const meta = { chica: part.chica, tag: part.imagen_tag || '' };
 
         btnUp.onclick = () => {
@@ -371,7 +359,6 @@
       $('msgs').scrollTop = $('msgs').scrollHeight;
     }
 
-    // --- Nombre ---
     $('btn-nombre').onclick = () => {
       const n = $('input-nombre').value.trim();
       if (!n) { $('input-nombre').focus(); return; }
@@ -383,7 +370,6 @@
       if (e.key === 'Enter') $('btn-nombre').click();
     });
 
-    // --- Selector ---
     await ensureImagenesLoaded().catch(() => {});
     const grid = $('grid-chicas');
     for (const nombre of getChicasDisponibles()) {
@@ -497,14 +483,13 @@
       show('screen-select');
     };
 
-    // Exponer stats de feedback en consola por si querés mirarlas
     window.quintiFeedbackStats = () => {
       const d = loadFeedback();
       console.table({ up: d.up, down: d.down, total: (d.up || 0) + (d.down || 0) });
       console.log('Últimos votos:', (d.items || []).slice(-10));
       return d;
     };
-    console.log('%c[Quinti] Listo. Abrí la consola para ver tags/imágenes en cada respuesta. Escribí quintiFeedbackStats() para ver votos.', 'color:#a78bfa');
+    console.log('%c[Quinti] Listo. F12 = consola de tags. quintiFeedbackStats() = votos.', 'color:#a78bfa');
   </script>
 </body>
 </html>
