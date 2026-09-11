@@ -27,7 +27,6 @@
     h1 { text-align: center; color: var(--accent); margin-bottom: 8px; font-size: 1.8rem; }
     .sub { text-align: center; color: var(--muted); margin-bottom: 24px; font-size: 0.95rem; }
 
-    /* Nombre */
     .name-box {
       max-width: 420px; margin: 60px auto 0; background: var(--card);
       border: 2px solid var(--line-dim); border-radius: 20px; padding: 28px;
@@ -47,7 +46,6 @@
     .btn.block { width: 100%; }
     .btn.sm { padding: 8px 12px; font-size: 0.85rem; border-radius: 10px; }
 
-    /* Selector chicas */
     .grid {
       display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
       gap: 16px;
@@ -62,7 +60,6 @@
     .card-chica strong { display: block; font-size: 1.05rem; }
     .card-chica small { color: var(--muted); font-size: 0.72rem; line-height: 1.3; display: block; margin-top: 4px; }
 
-    /* Modo: libre / historias */
     .modo-head { display: flex; gap: 12px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
     .modo-head img {
       width: 72px; height: 72px; border-radius: 50%; object-fit: cover; border: 3px solid var(--line);
@@ -77,7 +74,6 @@
     .story-item strong { color: var(--gold); display: block; margin-bottom: 4px; }
     .story-item span { color: var(--muted); font-size: 0.88rem; }
 
-    /* Chat */
     .chat-shell {
       background: rgba(18, 18, 32, 0.95); border: 2px solid var(--line-dim);
       border-radius: 18px; padding: 14px; display: flex; flex-direction: column;
@@ -113,6 +109,24 @@
     .msg.bot .cap { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
     .msg.bot audio {
       display: block; width: min(100%, 420px); margin-top: 8px;
+    }
+    .msg.bot .feedback {
+      display: flex; gap: 6px; margin-top: 8px; align-items: center;
+    }
+    .msg.bot .feedback button {
+      background: transparent; border: 1px solid var(--line-dim); border-radius: 8px;
+      color: var(--muted); cursor: pointer; padding: 4px 10px; font-size: 0.9rem;
+      transition: 0.15s;
+    }
+    .msg.bot .feedback button:hover { border-color: var(--accent); color: var(--text); }
+    .msg.bot .feedback button.active-up {
+      border-color: #22c55e; color: #22c55e; background: rgba(34,197,94,0.12);
+    }
+    .msg.bot .feedback button.active-down {
+      border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,0.12);
+    }
+    .msg.bot .feedback .fb-status {
+      font-size: 0.7rem; color: var(--muted);
     }
     .row { display: flex; gap: 8px; }
     .row input {
@@ -177,7 +191,7 @@
         <input id="input" placeholder="Escribí algo..." />
         <button class="btn" id="send">Enviar</button>
       </div>
-      <p class="hint">Mencioná contexto o a otra hermana / Aldo para que se sumen · un solo audio bajo la imagen</p>
+      <p class="hint">Mencioná contexto o a otra hermana / Aldo · 👍/👎 bajo cada respuesta · abrí la consola (F12) para ver tags</p>
     </div>
   </section>
 
@@ -200,15 +214,48 @@
     const screens = ['screen-name', 'screen-select', 'screen-modo', 'screen-chat'];
     let chicaActual = null;
     let busy = false;
-    /** Solo el <audio> DOM que está debajo de la imagen actual */
     let activeAudioEl = null;
+    let msgCounter = 0;
+
+    // --- Feedback local (casi cero costo: solo localStorage) ---
+    const FB_KEY = 'quinti_feedback_v1';
+    function loadFeedback() {
+      try {
+        return JSON.parse(localStorage.getItem(FB_KEY) || '{"up":0,"down":0,"items":[]}');
+      } catch {
+        return { up: 0, down: 0, items: [] };
+      }
+    }
+    function saveFeedback(data) {
+      try {
+        // Guardar solo los últimos 200 votos para no inflar storage
+        data.items = (data.items || []).slice(-200);
+        localStorage.setItem(FB_KEY, JSON.stringify(data));
+      } catch (_) {}
+    }
+    function registrarFeedback(voto, meta) {
+      const data = loadFeedback();
+      if (voto === 'up') data.up = (data.up || 0) + 1;
+      if (voto === 'down') data.down = (data.down || 0) + 1;
+      data.items.push({
+        v: voto,
+        chica: meta.chica || '',
+        tag: meta.tag || '',
+        t: Date.now()
+      });
+      saveFeedback(data);
+      console.log('%c[Feedback]', 'color:#22c55e;font-weight:bold',
+        voto === 'up' ? '👍' : '👎',
+        meta,
+        `| total 👍${data.up} 👎${data.down}`
+      );
+    }
 
     function show(id) {
       screens.forEach((s) => $(s).classList.toggle('active', s === id));
     }
 
     function stopAllAudio() {
-      // Pausar el activo
       if (activeAudioEl) {
         try {
           activeAudioEl.pause();
@@ -216,17 +263,16 @@
         } catch (_) {}
         activeAudioEl = null;
       }
-      // Por si quedó algún otro audio en el DOM
       document.querySelectorAll('#msgs audio').forEach((a) => {
-        try {
-          a.pause();
-        } catch (_) {}
+        try { a.pause(); } catch (_) {}
       });
     }
 
     function fmtText(text) {
       return String(text || '')
-        .replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>')
+        .replace(/&/g, '&')
+        .replace(/</g, '<')
+        .replace(/>/g, '>')
         .replace(/\*([^*]+)\*/g, '<em>*$1*</em>');
     }
 
@@ -241,13 +287,18 @@
     function addBotPart(part) {
       const el = document.createElement('div');
       el.className = 'msg bot';
+      const id = 'msg-' + (++msgCounter);
+      el.dataset.msgId = id;
+
       const tag = document.createElement('div');
       tag.className = 'who-tag';
       tag.textContent = part.chica || chicaActual || '';
       el.appendChild(tag);
+
       const body = document.createElement('div');
       body.innerHTML = fmtText(part.texto);
       el.appendChild(body);
+
       if (part.imagenUrl) {
         const im = document.createElement('img');
         im.className = 'scene';
@@ -261,7 +312,6 @@
         c.textContent = part.descripcionImg;
         el.appendChild(c);
       }
-      // UN SOLO audio: el que está debajo de la imagen, con controles, autoplay, loop
       if (part.audioUrl) {
         stopAllAudio();
         const au = document.createElement('audio');
@@ -271,10 +321,52 @@
         au.src = part.audioUrl;
         el.appendChild(au);
         activeAudioEl = au;
-        // Autoplay; el usuario puede pausar con los controles nativos
         const p = au.play();
         if (p && typeof p.catch === 'function') p.catch(() => {});
       }
+
+      // Feedback 👍 / 👎 (local, sin API)
+      if (part.chica && part.chica !== 'Sistema') {
+        const fb = document.createElement('div');
+        fb.className = 'feedback';
+        const btnUp = document.createElement('button');
+        btnUp.type = 'button';
+        btnUp.textContent = '👍';
+        btnUp.title = 'Buena respuesta';
+        const btnDown = document.createElement('button');
+        btnDown.type = 'button';
+        btnDown.textContent = '👎';
+        btnDown.title = 'Mala respuesta / tag incorrecto';
+        const status = document.createElement('span');
+        status.className = 'fb-status';
+
+        const meta = { chica: part.chica, tag: part.imagen_tag || '' };
+
+        btnUp.onclick = () => {
+          if (btnUp.classList.contains('active-up')) return;
+          btnUp.classList.add('active-up');
+          btnDown.classList.remove('active-down');
+          btnDown.disabled = true;
+          btnUp.disabled = true;
+          status.textContent = 'gracias';
+          registrarFeedback('up', meta);
+        };
+        btnDown.onclick = () => {
+          if (btnDown.classList.contains('active-down')) return;
+          btnDown.classList.add('active-down');
+          btnUp.classList.remove('active-up');
+          btnUp.disabled = true;
+          btnDown.disabled = true;
+          status.textContent = 'anotado';
+          registrarFeedback('down', meta);
+        };
+
+        fb.appendChild(btnUp);
+        fb.appendChild(btnDown);
+        fb.appendChild(status);
+        el.appendChild(fb);
+      }
+
       $('msgs').appendChild(el);
       $('msgs').scrollTop = $('msgs').scrollHeight;
     }
@@ -380,6 +472,7 @@
         $('chat-meta').textContent = `${activas} · fase: ${r.fase}`;
         $('chat-who').textContent = activas;
       } catch (e) {
+        console.error('[Quinti] Error', e);
         addBotPart({ chica: 'Sistema', texto: 'Error: ' + e.message });
       } finally {
         busy = false;
@@ -403,6 +496,15 @@
       $('msgs').innerHTML = '';
       show('screen-select');
     };
+
+    // Exponer stats de feedback en consola por si querés mirarlas
+    window.quintiFeedbackStats = () => {
+      const d = loadFeedback();
+      console.table({ up: d.up, down: d.down, total: (d.up || 0) + (d.down || 0) });
+      console.log('Últimos votos:', (d.items || []).slice(-10));
+      return d;
+    };
+    console.log('%c[Quinti] Listo. Abrí la consola para ver tags/imágenes en cada respuesta. Escribí quintiFeedbackStats() para ver votos.', 'color:#a78bfa');
   </script>
 </body>
 </html>
