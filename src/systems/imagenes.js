@@ -1,6 +1,6 @@
 // ============================================================
 //  Imágenes v2 — pack completo de la repo original
-//  + clasificación sex / no-sex
+//  + clasificación sex / no-sex + inferencia fuerte
 // ============================================================
 
 const ORIGINAL_URL =
@@ -89,6 +89,90 @@ export function listarTagsNoSex(chica) {
 }
 
 /**
+ * Inferencia fuerte de tag a partir del texto de la respuesta + mensaje del usuario.
+ * Prioriza acciones concretas sobre "hablando".
+ */
+export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex = false) {
+  let tags = listarTags(chica);
+  if (soloNoSex) {
+    const noSex = listarTagsNoSex(chica);
+    if (noSex.length) tags = noSex;
+  }
+  if (!tags.length) return 'hablando';
+
+  const t = `${textoBot || ''} ${textoUsuario || ''}`.toLowerCase();
+
+  // Orden: más específico / acción primero. Cada entrada: [regex, claves que buscan en tags]
+  const reglas = [
+    // Oral / chupadas
+    [/deepthroat|garganta|hasta el fondo|chupando_todo|toda la pija|toda la verga/, ['chupando_todo', 'chupando_todo_el_pene', 'deep']],
+    [/chupa.*(punta|cabeza)|solo la punta|la cabeza del/, ['chupando_solo_la_punta', 'punta']],
+    [/chupa.*(mitad)|hasta la mitad/, ['chupando_solo_la_mitad', 'mitad']],
+    [/chup|mam[ao]|oral|blow|en (tu|la|mi) boca|lamiendo.*(pene|verga|pija)/, ['chup', 'oral', 'lamiendo_pene', '69']],
+    [/chupando_bolas|bolas|testículos/, ['bolas', 'chupando_bola']],
+    // Posiciones
+    [/doggy|a cuatro|por detr[aá]s|desde atr[aá]s|de perrito/, ['doggy']],
+    [/misioner/, ['mision']],
+    [/reverse.?cowgirl|al revés encima/, ['reverse']],
+    [/cowgirl|me monto|mont[aá]ndote|encima (tuyo|de ti|de vos)/, ['cowgirl', 'reverse']],
+    [/sidefuck|de costado|de lado/, ['side']],
+    [/standfuck|de pie|contra la pared|ventana/, ['stand', 'ventana', 'de_pie']],
+    [/69/, ['69']],
+    // Anal
+    [/follando_anal|por el culo|en el ano|anal(?!_)/, ['anal', 'follando_anal']],
+    [/licking_anus|lamiendo.*(ano|culo)/, ['licking_anus', 'lamiendo']],
+    // Manos / dedos
+    [/handjob|paja|con la mano|te la jalo|masturb/, ['handjob', 'paja']],
+    [/metiendo_dedos|dedo.*(concha|ano)|finger/, ['dedo', 'finger', 'metiendo_dedos']],
+    [/squirt/, ['squirt']],
+    // Tetas / cuerpo
+    [/chupando_tetas|chupa.*(teta|pecho|pez[oó]n)/, ['chupando_tetas', 'teta']],
+    [/agarrando_tetas|agarra.*(teta|pecho)|tocando_tetas/, ['agarrando_tetas', 'tocando_tetas', 'teta']],
+    [/mostrando_tetas|enseña.*(teta|pecho)/, ['mostrando_tetas', 'teta']],
+    [/mostrando_sujetador|sujetador/, ['sujetador']],
+    // Nalgas / culo
+    [/nalguea|cachetada.*(culo|nalga)|azota/, ['nalg']],
+    [/agarra.*(culo|nalga)|usuario_agarra_el_culo/, ['agarra_el_culo', 'culo']],
+    [/enseñando_ano|estira.*(ano|culo)|abriendo.*(ano|culo)/, ['ano', 'estir']],
+    // Besos / desnudez / ropa
+    [/besando_desnuda|beso.*desnud/, ['besando_desnuda']],
+    [/beso|besarte|te beso|nos besamos|besando/, ['besando', 'bes']],
+    [/quit[aá]ndose|se saca la ropa|sin ropa|me desnudo|desnud/, ['quitandose', 'desnuda']],
+    [/desnuda_en_cama|en la cama desnuda/, ['desnuda_en_cama', 'desnuda']],
+    [/ropa_idol|idol/, ['ropa_idol', 'idol']],
+    [/ropa_vestido|vestido/, ['ropa_vestido', 'vestido']],
+    [/ropa_bikini|bikini/, ['ropa_bikini', 'bikini']],
+    [/ropa_yukata|yukata/, ['ropa_yukata', 'yukata']],
+    [/ropa_elegante|elegante/, ['ropa_elegante']],
+    [/ropa_sexy|sexy/, ['ropa_sexy']],
+    [/ropa_modelo|modelo/, ['ropa_modelo']],
+    [/ropa_cita|cita/, ['ropa_cita']],
+    [/lencer[ií]a|selfie_lenceria/, ['lenceria', 'selfie']],
+    // Cum
+    [/me_corro_en_su_boca|corro.*(boca)|semen.*(boca)|traga/, ['me_corro_en_su_boca', 'corro', 'semen']],
+    [/post_sexo|semen_derram|leche.*(culo|concha|pecho)/, ['post_sexo', 'semen']],
+    [/me corro|te corres|se corre|cumming|corrida/, ['corro', 'cum', 'anal_cumming']],
+    // Genéricos de follar
+    [/foll|te penetro|te la meto|m[eé]tela|dentro de (mi|ti)/, ['foll', 'mision', 'doggy', 'cowgirl']]
+  ];
+
+  for (const [rx, claves] of reglas) {
+    if (!rx.test(t)) continue;
+    for (const clave of claves) {
+      const hit = tags.find((k) => k.toLowerCase().includes(clave.toLowerCase()));
+      if (hit) {
+        return hit;
+      }
+    }
+    // fallback: cualquier tag que matchee alguna palabra de la clave
+    const hit2 = tags.find((k) => claves.some((c) => new RegExp(c, 'i').test(k)));
+    if (hit2) return hit2;
+  }
+
+  return tags.includes('hablando') ? 'hablando' : tags[0];
+}
+
+/**
  * Normaliza el tag que mandó el modelo a uno válido de esa chica.
  * Si soloNoSex = true, solo permite tags no-sex (hablando, ropa_*, etc.).
  */
@@ -113,30 +197,9 @@ export function normalizarTag(chica, tag, soloNoSex = false) {
   );
   if (fuzzy) return fuzzy;
 
-  const reglas = [
-    [/chup|oral|blow|punta|mitad|pene|verga|pija|deep/, /chup|oral|lamiendo_pene|69/],
-    [/doggy|cuatro|atr[aá]s/, /doggy/],
-    [/mision/, /mision/],
-    [/anal|ano|culo.*foll/, /anal/],
-    [/cowgirl|monta|encima/, /cowgirl|reverse/],
-    [/beso|besando/, /bes/],
-    [/desnud/, /desnud/],
-    [/teta|pecho|sujetador/, /teta|sujetador|pecho/],
-    [/dedo|finger|concha|squirt/, /dedo|concha|squirt|finger/],
-    [/paja|handjob|mano/, /handjob|paja/],
-    [/nalg|cachet/, /nalg/],
-    [/stand|de_pie|ventana/, /stand|ventana|de_pie/],
-    [/side/, /side/],
-    [/69/, /69/],
-    [/cum|corr|semen|boca/, /corro|cum|semen|post_sexo/],
-    [/ropa|vestido|idol|yukata|bikini|elegante|modelo|cita/, /ropa_/]
-  ];
-  for (const [hay, busca] of reglas) {
-    if (hay.test(lower)) {
-      const hit = tags.find((k) => busca.test(k.toLowerCase()));
-      if (hit) return hit;
-    }
-  }
+  // Reutilizar inferencia fuerte con el propio tag como texto
+  const fromTag = inferirTagFuerte(chica, t, '', soloNoSex);
+  if (fromTag && fromTag !== 'hablando') return fromTag;
 
   return tags.includes('hablando') ? 'hablando' : tags[0];
 }
@@ -148,7 +211,6 @@ export function resolverImagen(chica, tag = 'hablando', soloNoSex = false) {
   const d = QuintiImagenesPrueba?.[chica];
   if (!d) return { url: '', audio: '', descripcion: '', tag: 'hablando' };
 
-  // Si piden un tag sex pero estamos en modo no-sex → forzar no-sex
   let tagPedido = tag;
   if (soloNoSex && esTagSex(tagPedido)) {
     tagPedido = 'hablando';
