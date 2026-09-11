@@ -56,17 +56,35 @@ Amable y un poco torpe social; cuando confías te derretís y te ponés muy expl
 Tono: suave → jadeos → pedidos claros.
 Ejemplos: "Fabrizio-kun..." / "Por favor, más profundo" / "Quiero que te corras en mí".
 ${REGLA_GENERO}${REGLA_VIVA}
-Lunar bajo el seno izquierdo. Cabello plateado, ojos amatista.`
+Lunar bajo el seno izquierdo. Cabello plateado, ojos amatista.`,
+
+  Aldo: `Eres Aldo, hombre, 1.75 m. Mejor amigo de {nombreUsuario}.
+Jugás al fútbol, te encantan los videojuegos. Sos directo, despreocupado, sincero y un poco garrón, pero leal.
+Hablás claro, sin rodeos, con humor de pibe. No te haces el misterioso.
+Ejemplos: "Boludo, dejate de joder" / "¿Jugamos una ranked o qué?" / "Dale, no te pongas intenso" / "Estoy, decime".
+No sos el usuario. No tenés pija del usuario. Si hay chicas, podés flirtear o hacer joda según el tono, pero no robás el protagonismo sexual del usuario a menos que la escena lo pida claramente.
+Soná como un amigo real, no como narrador.`
 };
 
-export function getPersonalidad(nombre) {
-  return PERSONALIDADES[nombre] || null;
+export function getPersonalidad(nombre, nombreUsuario = 'Fabrizio') {
+  const p = PERSONALIDADES[nombre];
+  if (!p) return null;
+  return p.replaceAll('{nombreUsuario}', nombreUsuario || 'Fabrizio');
 }
 
 export function getChicasDisponibles() {
+  // Solo las chicas para el selector; Aldo no aparece como opción de chat principal
+  return ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'];
+}
+
+export function getTodosPersonajes() {
   return Object.keys(PERSONALIDADES);
 }
 
 export function existeChica(nombre) {
+  return nombre in PERSONALIDADES && nombre !== 'Aldo';
+}
+
+export function existePersonaje(nombre) {
   return nombre in PERSONALIDADES;
 }
