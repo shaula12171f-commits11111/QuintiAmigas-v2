@@ -4,7 +4,14 @@
 
 import { armarSystemPrompt, PROMPTS_REINTENTO } from './systemPrompt.js';
 import { getPersonalidad, getChicasDisponibles, existeChica } from '../characters/personalidades.js';
-import { resolverImagen, getImagenSelector, getDescripcionChica } from '../systems/imagenes.js';
+import {
+  resolverImagen,
+  getImagenSelector,
+  getDescripcionChica,
+  listarTags,
+  normalizarTag,
+  ensureImagenesLoaded
+} from '../systems/imagenes.js';
 import { GROQ_KEYS, MODELO, NOMBRE_USUARIO_DEFAULT } from '../../config.js';
 
 export const FASE = {
@@ -24,12 +31,14 @@ let estado = {
   keyIndex: 0
 };
 
-const MAX_HISTORIAL = 16;
+const MAX_HISTORIAL = 18;
 const PATRON_LUGAR_PRIVADO = /\b(hotel|motel|habitaci[oó]n|casa|departamento|depto|pieza|cuarto|mi casa|tu casa|a solas|lugar m[aá]s privado)\b/i;
 const PATRON_CONFIRMACION = /\b(s[ií]|claro|vamos|dale|quiero|contin[uú]a|continuar|foll|chup|besame|t[oó]came|hazlo|hacelo|por favor|ya)\b/i;
 const PATRON_NEGACION = /\b(no|para|espera|despacio|mejor no|ahora no)\b/i;
 
-export function getEstado() { return { ...estado }; }
+export function getEstado() {
+  return { ...estado };
+}
 
 export function setChica(nombre) {
   if (!existeChica(nombre)) throw new Error('Chica no existe');
@@ -62,12 +71,18 @@ function actualizarFaseSegunUsuario(mensaje) {
 }
 
 function construirContexto() {
-  const lineas = [`Fase de escena: ${estado.fase}`, 'RECUERDA: el usuario es HOMBRE (tiene pija, NO coño).'];
+  const lineas = [
+    `Fase: ${estado.fase}`,
+    'Usuario = HOMBRE (pija). Tú = MUJER.',
+    'Escribí natural y viva, no robótica.'
+  ];
   if (estado.ubicacion) lineas.push(`Ubicación: ${estado.ubicacion}`);
   if (estado.fase === FASE.TRASLADO || estado.fase === FASE.LLEGADA) {
-    lineas.push('INSTRUCCIÓN: Aún NO sexo explícito. Llegada + pedir confirmación.');
+    lineas.push('Aún NO sexo explícito: llegada + pedir confirmación.');
   }
-  if (estado.fase === FASE.INTIMO) lineas.push('INSTRUCCIÓN: Escena íntima activa. Sé explícita y sucia.');
+  if (estado.fase === FASE.INTIMO) {
+    lineas.push('Escena íntima activa: sé explícita, sucia y en el momento.');
+  }
   if (estado.hechos.length) lineas.push('Hechos: ' + estado.hechos.slice(-8).join(' | '));
   return lineas.join('\n');
 }
@@ -91,19 +106,25 @@ async function llamarGroq(messages) {
     try {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`
+        },
         body: JSON.stringify({
           model: MODELO || 'llama-3.3-70b-versatile',
           messages,
-          temperature: 0.9,
-          max_tokens: 1200
+          temperature: 1.05,
+          top_p: 0.95,
+          max_tokens: 1400
         })
       });
       if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
       const data = await res.json();
       estado.keyIndex = (estado.keyIndex + i) % GROQ_KEYS.length;
       return data.choices?.[0]?.message?.content || '';
-    } catch (e) { ultimoError = e; }
+    } catch (e) {
+      ultimoError = e;
+    }
   }
   throw ultimoError || new Error('Falló la API / sin keys válidas');
 }
@@ -129,12 +150,56 @@ function postProcesarFase(respuestaTexto) {
   }
 }
 
+/** Si el tag sigue siendo genérico, intenta deducirlo del texto de la respuesta */
+function inferirTagDesdeTexto(chica, texto, tagActual) {
+  const tags = listarTags(chica);
+  if (!tags.length) return tagActual || 'hablando';
+  const t = (texto || '').toLowerCase();
+  const candidatos = [
+    [/chup|mam[ao]|en (tu|la) boca|deepthroat|garganta/, 'chupando'],
+    [/doggy|a cuatro|por detr[aá]s|desde atr[aá]s/, 'doggystyle'],
+    [/misioner/, 'misionero'],
+    [/anal|por el culo|en el ano/, 'anal'],
+    [/cowgirl|me monto|encima (tuyo|de ti)/, 'cowgirl'],
+    [/beso|besarte|te beso/, 'besando'],
+    [/desnud|sin ropa|me saco/, 'desnuda'],
+    [/teta|pecho|pez[oó]n/, 'teta'],
+    [/dedo|me toco|dentro de mi concha/, 'dedo'],
+    [/paja|con la mano|te la jalo/, 'handjob'],
+    [/nalg|cachetada en el culo/, 'nalg'],
+    [/de pie|contra la pared|ventana/, 'stand'],
+    [/69/, '69'],
+    [/me corro|te corres|semen|leche/, 'corro']
+  ];
+  for (const [rx, clave] of candidatos) {
+    if (rx.test(t)) {
+      const hit = tags.find((k) => k.toLowerCase().includes(clave) || new RegExp(clave, 'i').test(k));
+      if (hit) return hit;
+    }
+  }
+  return normalizarTag(chica, tagActual || 'hablando');
+}
+
 export async function enviarMensaje(mensajeUsuario) {
   if (!estado.chica) throw new Error('Selecciona una chica primero');
+
+  try {
+    await ensureImagenesLoaded();
+  } catch (_) {
+    /* sigue con lo que haya */
+  }
+
   actualizarFaseSegunUsuario(mensajeUsuario);
 
+  const tags = listarTags(estado.chica);
   const personalidad = getPersonalidad(estado.chica);
-  const system = armarSystemPrompt(personalidad, estado.nombreUsuario, construirContexto());
+  const system = armarSystemPrompt(
+    personalidad,
+    estado.nombreUsuario,
+    construirContexto(),
+    tags
+  );
+
   const messages = [
     { role: 'system', content: system },
     ...estado.historial.slice(-MAX_HISTORIAL),
@@ -151,7 +216,11 @@ export async function enviarMensaje(mensajeUsuario) {
         ...estado.historial.slice(-8),
         { role: 'user', content: mensajeUsuario },
         { role: 'assistant', content: raw || '' },
-        { role: 'user', content: 'Corrige y responde SOLO con el JSON pedido. Usuario = HOMBRE.' }
+        {
+          role: 'user',
+          content:
+            'Corrige y responde SOLO el JSON. Usuario=HOMBRE. imagen_tag de la lista de tags válidos. Hablá natural.'
+        }
       ]);
       parsed = parseJsonRespuesta(raw);
       if (parsed) break;
@@ -160,7 +229,7 @@ export async function enviarMensaje(mensajeUsuario) {
 
   if (!parsed) {
     parsed = {
-      respuesta: `*te miro y sonrío de lado* Oye ${estado.nombreUsuario}... se me trabó un segundo. Repíteme eso.`,
+      respuesta: `*te miro y suelto una risita* Ay ${estado.nombreUsuario}... se me fue. Decime de nuevo, que quiero contestarte bien.`,
       imagen_tag: 'hablando'
     };
   }
@@ -168,22 +237,29 @@ export async function enviarMensaje(mensajeUsuario) {
   postProcesarFase(parsed.respuesta);
   extraerHechos(mensajeUsuario, parsed.respuesta);
 
+  let tag = normalizarTag(estado.chica, parsed.imagen_tag || 'hablando');
+  // si el modelo se quedó en hablando pero el texto describe acción, inferir
+  if (tag === 'hablando' || !parsed.imagen_tag) {
+    tag = inferirTagDesdeTexto(estado.chica, parsed.respuesta + ' ' + mensajeUsuario, tag);
+  }
+
   estado.historial.push({ role: 'user', content: mensajeUsuario });
   estado.historial.push({ role: 'assistant', content: parsed.respuesta });
   if (estado.historial.length > MAX_HISTORIAL * 2) {
     estado.historial = estado.historial.slice(-MAX_HISTORIAL * 2);
   }
 
-  const media = resolverImagen(estado.chica, parsed.imagen_tag || 'hablando');
+  const media = resolverImagen(estado.chica, tag);
 
   return {
     texto: parsed.respuesta,
-    imagen_tag: parsed.imagen_tag || 'hablando',
+    imagen_tag: media.tag || tag,
     imagenUrl: media.url,
     audioUrl: media.audio || '',
     descripcionImg: media.descripcion || '',
     fase: estado.fase,
-    chica: estado.chica
+    chica: estado.chica,
+    tagsDisponibles: tags.length
   };
 }
 
@@ -194,4 +270,4 @@ export function resetChat() {
   estado.hechos = [];
 }
 
-export { getChicasDisponibles, getImagenSelector, getDescripcionChica };
+export { getChicasDisponibles, getImagenSelector, getDescripcionChica, listarTags };
