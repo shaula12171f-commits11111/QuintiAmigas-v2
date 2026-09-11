@@ -1,5 +1,6 @@
 // ============================================================
 //  Imágenes v2 — pack completo de la repo original
+//  + clasificación sex / no-sex
 // ============================================================
 
 const ORIGINAL_URL =
@@ -7,6 +8,14 @@ const ORIGINAL_URL =
 
 let QuintiImagenesPrueba = null;
 let _loadPromise = null;
+
+// Tags que NO son de sexo explícito (ropa, hablando, poses suaves, NOSEX)
+const PATRON_NO_SEX =
+  /^(hablando|ropa_|desnuda$|desnuda_en_cama|besando$|mostrando_sujetador|quitandose_la_ropa|selfie_|.*_NOSEX$|moviendo_el_culo$)/i;
+
+// Cualquier tag que implique acto sexual o genitales en acción
+const PATRON_SEX =
+  /chup|oral|pene|verga|pija|doggy|mision|anal|cowgirl|handjob|paja|69|foll|cum|corro|semen|dedo|squirt|lamiendo|nalg|standfuck|sidefuck|mattin|estir|ano|concha|tetas?_de|agarra_el_culo(?!_.*NOSEX)|rozo_mi|post_sexo|usuario_chupa|metiendo_dedos/i;
 
 function parseOriginalModule(text) {
   const sandbox = { window: {}, exports: {}, module: { exports: {} } };
@@ -65,12 +74,30 @@ export function listarTags(chica) {
   });
 }
 
+/** True si el tag es claramente de sexo explícito */
+export function esTagSex(tag) {
+  if (!tag) return false;
+  const t = String(tag);
+  if (/_NOSEX$/i.test(t)) return false;
+  if (PATRON_NO_SEX.test(t)) return false;
+  return PATRON_SEX.test(t);
+}
+
+/** Tags no-sex de una chica (para escenas sin sexo) */
+export function listarTagsNoSex(chica) {
+  return listarTags(chica).filter((t) => !esTagSex(t));
+}
+
 /**
  * Normaliza el tag que mandó el modelo a uno válido de esa chica.
- * Si no hay match → hablando (o primer tag disponible).
+ * Si soloNoSex = true, solo permite tags no-sex (hablando, ropa_*, etc.).
  */
-export function normalizarTag(chica, tag) {
-  const tags = listarTags(chica);
+export function normalizarTag(chica, tag, soloNoSex = false) {
+  let tags = listarTags(chica);
+  if (soloNoSex) {
+    const noSex = listarTagsNoSex(chica);
+    if (noSex.length) tags = noSex;
+  }
   if (!tags.length) return 'hablando';
   if (!tag) return tags.includes('hablando') ? 'hablando' : tags[0];
 
@@ -81,13 +108,11 @@ export function normalizarTag(chica, tag) {
   const exact = tags.find((k) => k.toLowerCase() === lower);
   if (exact) return exact;
 
-  // fuzzy: el tag pedido contenido en la key o al revés
   const fuzzy = tags.find(
     (k) => k.toLowerCase().includes(lower) || lower.includes(k.toLowerCase())
   );
   if (fuzzy) return fuzzy;
 
-  // heurística por palabras clave del texto del tag
   const reglas = [
     [/chup|oral|blow|punta|mitad|pene|verga|pija|deep/, /chup|oral|lamiendo_pene|69/],
     [/doggy|cuatro|atr[aá]s/, /doggy/],
@@ -103,7 +128,8 @@ export function normalizarTag(chica, tag) {
     [/stand|de_pie|ventana/, /stand|ventana|de_pie/],
     [/side/, /side/],
     [/69/, /69/],
-    [/cum|corr|semen|boca/, /corro|cum|semen|post_sexo/]
+    [/cum|corr|semen|boca/, /corro|cum|semen|post_sexo/],
+    [/ropa|vestido|idol|yukata|bikini|elegante|modelo|cita/, /ropa_/]
   ];
   for (const [hay, busca] of reglas) {
     if (hay.test(lower)) {
@@ -115,11 +141,20 @@ export function normalizarTag(chica, tag) {
   return tags.includes('hablando') ? 'hablando' : tags[0];
 }
 
-export function resolverImagen(chica, tag = 'hablando') {
+/**
+ * Resuelve imagen. Si soloNoSex=true (escena sin sexo), fuerza tags no-sex.
+ */
+export function resolverImagen(chica, tag = 'hablando', soloNoSex = false) {
   const d = QuintiImagenesPrueba?.[chica];
   if (!d) return { url: '', audio: '', descripcion: '', tag: 'hablando' };
 
-  const tagOk = normalizarTag(chica, tag);
+  // Si piden un tag sex pero estamos en modo no-sex → forzar no-sex
+  let tagPedido = tag;
+  if (soloNoSex && esTagSex(tagPedido)) {
+    tagPedido = 'hablando';
+  }
+
+  const tagOk = normalizarTag(chica, tagPedido, soloNoSex);
   const imgs = d.imagenes || {};
   let entry = imgs[tagOk];
 
