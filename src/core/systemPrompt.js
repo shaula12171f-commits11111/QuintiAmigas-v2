@@ -80,7 +80,8 @@ export function armarSystemPrompt(
   nombreUsuario,
   contextoExtra = '',
   tagsDisponibles = [],
-  loreMundo = ''
+  loreMundo = '',
+  descripcionesVisuales = []
 ) {
   const bloqueTags = tagsDisponibles.length
     ? `TAGS VÁLIDOS PARA LA CHICA PRINCIPAL (elige UNO exacto en imagen_tag):
@@ -89,6 +90,21 @@ Elegí el tag de lo que REALMENTE pasa según lo que el USUARIO pidió.
 - Si solo te mostró la pija → usuario_muestra_su_verga (NUNCA chupando/lamiendo).
 - Si te pidió que lamas/chupes/mames → tag de oral (lamiendo_pene, chupando_*, etc.). NUNCA desnuda ni hablando.`
     : 'Si no hay lista de tags, usa hablando.';
+
+  let bloqueVisual = '';
+  if (descripcionesVisuales && descripcionesVisuales.length) {
+    const lineas = descripcionesVisuales
+      .filter((d) => d && d.tag && d.descripcion)
+      .map((d) => `- ${d.tag}: ${d.descripcion}`)
+      .join('\n');
+    if (lineas) {
+      bloqueVisual = `### DESCRIPCIÓN VISUAL DE LAS IMÁGENES (OBLIGATORIO RESPETAR)
+Cada tag tiene una imagen. Si elegís un tag de esta lista, tu respuesta DEBE ser coherente con su descripción (ropa, color, pose, detalle).
+Ejemplo: si el tag dice "bikini dorado", NO inventes bikini negro ni otra prenda distinta.
+${lineas}
+Si el tag que usás no está en la lista, no inventes ropa contradictoria con lo ya establecido en la escena.`;
+    }
+  }
 
   return `${SYSTEM_PROMPT_BASE}
 
@@ -100,6 +116,8 @@ ${personalidad}
 NOMBRE DEL USUARIO: ${nombreUsuario} (HOMBRE).
 
 ${bloqueTags}
+
+${bloqueVisual}
 
 ${contextoExtra ? `CONTEXTO DE ESCENA:\n${contextoExtra}` : ''}
 
