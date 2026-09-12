@@ -12,7 +12,7 @@ const PATRON_NO_SEX =
   /^(hablando|ropa_|desnuda$|desnuda_en_cama|besando$|mostrando_sujetador|quitandose_la_ropa|selfie_|.*_NOSEX$|moviendo_el_culo$|viendo_verga|usuario_muestra_su_verga)/i;
 
 const PATRON_SEX =
-  /chup|oral|pene|verga|pija|doggy|mision|anal|cowgirl|handjob|paja|69|foll|cum|corro|semen|dedo|squirt|lamiendo|nalg|standfuck|sidefuck|mattin|estir|ano|concha|tetas?_de|agarra_el_culo(?!_.*NOSEX)|rozo_mi|post_sexo|usuario_chupa|metiendo_dedos/i;
+  /chup|oral|pene|verga|pija|doggy|mision|anal|cowgirl|handjob|paja|69|foll|cum|corro|semen|dedo|squirt|lamiendo|nalg|standfuck|sidefuck|mattin|estir|ano|concha|tetas?_de|agarra_el_culo(?!_.*NOSEX)|rozo_mi|post_sexo|usuario_chupa|metiendo_dedos|aire/i;
 
 const SINONIMOS_VERGA = /\b(polla|pija|poronga|pichula|pito|rabo|pinga|pene|verga)\b/gi;
 
@@ -58,16 +58,13 @@ ensureImagenesLoaded().catch((e) => console.warn('[imagenes]', e.message));
 export function getDatosChica(chica) {
   return QuintiImagenesPrueba?.[chica] || null;
 }
-
 export function getImagenSelector(chica) {
   const d = QuintiImagenesPrueba?.[chica];
   return d?.imagenSelector || d?.imagenes?.hablando?.url || '';
 }
-
 export function getDescripcionChica(chica) {
   return QuintiImagenesPrueba?.[chica]?.descripcion || '';
 }
-
 export function listarTags(chica) {
   const imgs = QuintiImagenesPrueba?.[chica]?.imagenes || {};
   return Object.keys(imgs).filter((k) => {
@@ -77,7 +74,6 @@ export function listarTags(chica) {
     return !!(e.url && String(e.url).trim());
   });
 }
-
 export function esTagSex(tag) {
   if (!tag) return false;
   const t = String(tag);
@@ -86,11 +82,9 @@ export function esTagSex(tag) {
   if (/viendo_verga|usuario_muestra_su_verga|ve_mi_verga/i.test(t)) return false;
   return PATRON_SEX.test(t);
 }
-
 export function listarTagsNoSex(chica) {
   return listarTags(chica).filter((t) => !esTagSex(t));
 }
-
 function buscarTag(tags, claves, preferNoSex = false) {
   if (preferNoSex) {
     for (const clave of claves) {
@@ -145,6 +139,7 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
     { rx: /cowgirl|me monto|montandote|encima (tuyo|de ti|de vos)|te cabalgo/, claves: ['cowgirl', 'reverse'] },
     { rx: /sidefuck|de costado|de lado/, claves: ['sidefuck', 'side'] },
     { rx: /standfuck|de pie|contra la pared|en la ventana|ventana/, claves: ['standfuck', 'stand', 'ventana', 'de_pie'] },
+    { rx: /en el aire|follando_en_el_aire|sexo en el aire|cog(iendo|er)? en el aire|levanta[rd]?a? en el aire/, claves: ['follando_en_el_aire', 'aire'] },
     { rx: /follando_anal|por el culo|en el ano|sexo anal|anal(?!_)/, claves: ['follando_anal', 'anal'] },
     { rx: /licking_anus|lamiendo.*(ano|culo)|beso negro/, claves: ['licking_anus', 'lamiendo'] },
     { rx: /handjob|paja|con la mano|te la jalo|masturb|me la sobas/, claves: ['handjob_paja', 'handjob', 'paja'] },
@@ -194,60 +189,41 @@ export function normalizarTag(chica, tag, soloNoSex = false) {
   }
   if (!tags.length) return 'hablando';
   if (!tag) return tags.includes('hablando') ? 'hablando' : tags[0];
-
   const t = String(tag).trim();
   if (tags.includes(t)) return t;
-
   if (soloNoSex) {
     const nosexVariant = tags.find(
       (k) => /_NOSEX$/i.test(k) && (k.toLowerCase().includes(t.toLowerCase().replace(/_nosex$/i, '')) || t.toLowerCase().includes(k.toLowerCase().replace(/_nosex$/i, '')))
     );
     if (nosexVariant) return nosexVariant;
   }
-
   const lower = t.toLowerCase();
   const exact = tags.find((k) => k.toLowerCase() === lower);
   if (exact) return exact;
-
   const fuzzy = tags.find((k) => k.toLowerCase().includes(lower) || lower.includes(k.toLowerCase()));
   if (fuzzy) return fuzzy;
-
   const fromTag = inferirTagFuerte(chica, t, '', soloNoSex);
   if (fromTag && fromTag !== 'hablando') return fromTag;
-
   return tags.includes('hablando') ? 'hablando' : tags[0];
 }
 
 export function resolverImagen(chica, tag = 'hablando', soloNoSex = false) {
   const d = QuintiImagenesPrueba?.[chica];
   if (!d) return { url: '', audio: '', descripcion: '', tag: 'hablando' };
-
   let tagPedido = tag || 'hablando';
   if (soloNoSex && esTagSex(tagPedido)) {
     const all = listarTags(chica);
     const nosex = all.find((k) => /_NOSEX$/i.test(k) && k.toLowerCase().includes(String(tagPedido).toLowerCase().replace(/_nosex$/i, '').slice(0, 12)));
     tagPedido = nosex || 'hablando';
   }
-
   const tagOk = normalizarTag(chica, tagPedido, soloNoSex);
   const imgs = d.imagenes || {};
   let entry = imgs[tagOk];
-
-  if (!entry) {
-    entry = imgs.hablando || { url: d.imagenSelector || '', audio: '', descripcion: '' };
-  }
-  if (typeof entry === 'string') {
-    return { url: entry, audio: '', descripcion: '', tag: tagOk };
-  }
-  return {
-    url: entry.url || d.imagenSelector || '',
-    audio: entry.audio || '',
-    descripcion: entry.descripcion || '',
-    tag: tagOk
-  };
+  if (!entry) entry = imgs.hablando || { url: d.imagenSelector || '', audio: '', descripcion: '' };
+  if (typeof entry === 'string') return { url: entry, audio: '', descripcion: '', tag: tagOk };
+  return { url: entry.url || d.imagenSelector || '', audio: entry.audio || '', descripcion: entry.descripcion || '', tag: tagOk };
 }
 
-/** Descripción visual de un tag concreto (ropa, pose, detalle). */
 export function getTagDescripcion(chica, tag) {
   const d = QuintiImagenesPrueba?.[chica];
   if (!d || !tag) return '';
@@ -257,7 +233,6 @@ export function getTagDescripcion(chica, tag) {
   return String(entry.descripcion || '').trim();
 }
 
-/** Lista tags con descripción no vacía: [{ tag, descripcion }, ...] */
 export function listarDescripcionesTags(chica, soloNoSex = false) {
   let tags = listarTags(chica);
   if (soloNoSex) {
