@@ -1,7 +1,6 @@
 // ============================================================
 //  Motor principal - QuintiAmigas v2
-//  Tags: resolucion por especificidad (usuario > reglas > dinamico)
-//  + tagEngine estilo Nakardas (prioridad usuario > continuidad > bot)
+//  Tags: usuario > tagEngine Nakardas > continuidad > bot > hablando
 // ============================================================
 
 import { armarSystemPrompt, PROMPTS_REINTENTO } from './systemPrompt.js';
@@ -32,7 +31,7 @@ const MAX_HISTORIAL = 20;
 const PATRON_LUGAR_PRIVADO = /\b(hotel|motel|habitaci[oó]n|casa|departamento|depto|pieza|cuarto|mi casa|tu casa|a solas|lugar m[aá]s privado)\b/i;
 const PATRON_CONFIRMACION = /\b(s[ií]|claro|vamos|dale|quiero|contin[uú]a|continuar|foll|chup|besame|t[oó]came|hazlo|hacelo|por favor|ya)\b/i;
 const PATRON_NEGACION = /\b(no|para|espera|despacio|mejor no|ahora no)\b/i;
-const PATRON_SEXO = /\b(foll|chup|mamad|mam[ao]|lam[ei]|lamiendo|lamer|deepthroat|te la meto|métela|cog[eé]|por el culo|en el culo|follando|penetra|en (tu|la) boca|hasta el fondo|toda la (pija|verga|polla)|handjob|paja|corr[ei]|semen|69|doggy|misioner|cowgirl|chupame|mamame|chupamela|mamamela|lame(me|la)?|bola|bolas|testicul)\b/i;
+const PATRON_SEXO = /\b(foll|chup|mamad|mam[ao]|lam[ei]|lamiendo|lamer|deepthroat|te la meto|métela|cog[eé]|por el culo|en el culo|follando|penetra|en (tu|la) boca|hasta el fondo|toda la (pija|verga|polla)|handjob|paja|corr[ei]|semen|69|doggy|misioner|cowgirl|chupame|mamame|chupamela|mamamela|lame(me|la)?|bola|bolas|testicul|agarr)\b/i;
 const PATRON_ORAL = /\b(chup|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|chupamela|mamamela|lame(me|la)?|en (tu|la|mi) boca|deepthroat|oral|blowjob|bola|bolas|testicul)\b/i;
 const SINONIMOS_VERGA = /\b(polla|pija|poronga|pichula|pito|rabo|pinga|pene|verga)\b/gi;
 
@@ -120,7 +119,7 @@ function actualizarFaseSegunUsuario(mensaje) {
     if (PATRON_CONFIRMACION.test(m) && !/^no\b/i.test(m.trim())) estado.fase = FASE.INTIMO;
     else if (PATRON_NEGACION.test(m)) estado.fase = FASE.NORMAL;
   }
-  if (estado.fase !== FASE.INTIMO && /chup|foll|met[eo]|cog|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|doggy|misioner|bola/i.test(m)) estado.fase = FASE.INTIMO;
+  if (estado.fase !== FASE.INTIMO && /chup|foll|met[eo]|cog|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|doggy|misioner|bola|agarr.*culo/i.test(m)) estado.fase = FASE.INTIMO;
 }
 function construirContexto(mensajeUsuarioActual = '') {
   const lineas = [
@@ -240,7 +239,9 @@ function resolverIntencionUsuario(mensaje) {
   if (/handjob|paja|con la mano|te la jalo/.test(t)) return { tagHint: ['handjob', 'paja'], label: 'handjob' };
   if (/\bbeso|besarte|besando|te beso/.test(t)) return { tagHint: ['besando', 'bes'], label: 'beso' };
   if (/desnuda|desnud|sin ropa/.test(t)) return { tagHint: ['desnuda', 'quitandose'], label: 'desnuda' };
-  if (/agarr[oa].*culo|culo.*agarr|tomo.*culo|manose.*culo/.test(t)) return { tagHint: ['usuario_agarra_el_culo', 'agarra_el_culo', 'agarrando_culo'], label: 'agarrar_culo' };
+  if (/agarr[oóa].*culo|culo.*agarr|le agarr[oóa]|te agarr[oóa]|tomo.*culo|manose.*culo|apriet[oóa].*culo/.test(t)) {
+    return { tagHint: ['usuario_agarra_el_culo', 'agarra_el_culo', 'agarrando_culo', 'usuario_agarra'], label: 'agarrar_culo' };
+  }
   return null;
 }
 
@@ -253,11 +254,33 @@ function buscarTagEnPack(chica, claves, soloNoSex) {
   return null;
 }
 
-/** Elegir tag con motor Nakardas: usuario > continuidad > bot > modelo > hablando */
+/** Elegir tag: 1) intencion usuario 2) tagEngine Nakardas 3) seguridad no-sex */
 function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
+  const userRaw = String(textoUsuario || '');
+  const intencion = resolverIntencionUsuario(userRaw);
+
+  // 1) Intención explícita del usuario (prioridad máxima)
+  if (intencion) {
+    const sinFiltro = intencion.label === 'muestra'
+      || intencion.label.startsWith('oral')
+      || intencion.label === 'agarrar_culo'
+      || intencion.label === 'nalguear'
+      || intencion.label === 'beso'
+      || intencion.label === 'desnuda';
+    const hit = buscarTagEnPack(chica, intencion.tagHint, sinFiltro ? false : soloNoSex);
+    if (hit) {
+      return { elegido: hit, razon: 'intencion:' + intencion.label, fuente: 'usuario', puntuacion: 20 };
+    }
+    const forced = normalizarTag(chica, intencion.tagHint[0], sinFiltro ? false : soloNoSex);
+    if (forced && forced !== 'hablando') {
+      return { elegido: forced, razon: 'intencion_norm:' + intencion.label, fuente: 'usuario', puntuacion: 15 };
+    }
+  }
+
+  // 2) Motor Nakardas
   const resultado = resolverTagEscena({
     chica,
-    mensajeUsuario: textoUsuario || '',
+    mensajeUsuario: userRaw,
     textoBot: textoBloque || '',
     tagModelo: tagModelo || '',
     soloNoSex: !!soloNoSex,
@@ -266,14 +289,15 @@ function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
   let elegido = normalizarTag(chica, resultado.tag || 'hablando', soloNoSex);
   let razon = resultado.razon || 'sin';
 
+  // 3) Seguridad no-sex (no bloquea agarrar/nalguear/muestra)
   if (soloNoSex) {
-    const esMuestraTag = /usuario_muestra_su_verga|viendo_verga|ve_mi_verga|muestra_su_verga/i.test(String(elegido || ''));
-    if (!esMuestraTag && (esTagSex(elegido) || /chup|foll|doggy|anal|cowgirl|mision|handjob|paja|oral|bola/i.test(String(elegido || '')))) {
+    const permitido = /usuario_muestra_su_verga|viendo_verga|ve_mi_verga|muestra_su_verga|agarra_el_culo|nalguea|besando|desnuda|mostrando_culo|bikini|playa|hablando|selfie|ropa_/i.test(String(elegido || ''));
+    if (!permitido && (esTagSex(elegido) || /chup|foll|doggy|anal|cowgirl|mision|handjob|paja|oral|bola/i.test(String(elegido || '')))) {
       elegido = 'hablando';
       razon += '+forzado_nosex';
     }
   }
-  return { elegido, razon, fuente: resultado.fuente || '', puntuacion: resultado.puntuacion || 0 };
+  return { elegido, razon, fuente: resultado.fuente || (intencion ? 'usuario' : ''), puntuacion: resultado.puntuacion || 0 };
 }
 
 export async function enviarMensaje(mensajeUsuario) {
