@@ -141,7 +141,7 @@
     <div class="name-box">
       <h1>QuintiAmigas v2</h1>
       <p class="sub">¿Cómo te llamás? Las chicas van a usar ese nombre.</p>
-      <input id="input-nombre" placeholder="Tu nombre..." maxlength="32" />
+      <input id="input-nombre" value="Fabrizio" placeholder="Tu nombre..." maxlength="32" />
       <button class="btn block" id="btn-nombre">Entrar</button>
     </div>
   </section>
@@ -271,8 +271,6 @@
     }
 
     function addBotPart(part) {
-      // SIEMPRE cortar el audio anterior al llegar un mensaje nuevo del bot
-      // (tenga o no audio este mensaje)
       stopAllAudio();
 
       const el = document.createElement('div');
@@ -302,7 +300,6 @@
         el.appendChild(c);
       }
 
-      // Solo si ESTE mensaje trae audio → crear el player y autoplay
       if (part.audioUrl) {
         const au = document.createElement('audio');
         au.controls = true;
@@ -360,8 +357,7 @@
     }
 
     $('btn-nombre').onclick = () => {
-      const n = $('input-nombre').value.trim();
-      if (!n) { $('input-nombre').focus(); return; }
+      const n = $('input-nombre').value.trim() || 'Fabrizio';
       setNombreUsuario(n);
       $('saludo-nombre').textContent = `Hola, ${n}. Tocá una chica.`;
       show('screen-select');
@@ -369,6 +365,8 @@
     $('input-nombre').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') $('btn-nombre').click();
     });
+    // Seleccionar el texto al enfocar para cambiarlo fácil
+    $('input-nombre').addEventListener('focus', function () { this.select(); });
 
     await ensureImagenesLoaded().catch(() => {});
     const grid = $('grid-chicas');
