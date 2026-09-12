@@ -1,5 +1,6 @@
 // ============================================================
-//  Motor principal - QuintiAmigas v2 (poses + muestra verga fix)
+//  Motor principal - QuintiAmigas v2
+//  Tags: resolución por especificidad (usuario > reglas > dinámico)
 // ============================================================
 
 import { armarSystemPrompt, PROMPTS_REINTENTO } from './systemPrompt.js';
@@ -29,8 +30,8 @@ const MAX_HISTORIAL = 20;
 const PATRON_LUGAR_PRIVADO = /\b(hotel|motel|habitaci[oó]n|casa|departamento|depto|pieza|cuarto|mi casa|tu casa|a solas|lugar m[aá]s privado)\b/i;
 const PATRON_CONFIRMACION = /\b(s[ií]|claro|vamos|dale|quiero|contin[uú]a|continuar|foll|chup|besame|t[oó]came|hazlo|hacelo|por favor|ya)\b/i;
 const PATRON_NEGACION = /\b(no|para|espera|despacio|mejor no|ahora no)\b/i;
-const PATRON_SEXO = /\b(foll|chup|mamad|mam[ao]|lam[ei]|lamiendo|lamer|deepthroat|te la meto|métela|cog[eé]|por el culo|en el culo|follando|penetra|en (tu|la) boca|hasta el fondo|toda la (pija|verga|polla)|handjob|paja|corr[ei]|semen|69|doggy|misioner|cowgirl|chupame|mamame|chupamela|mamamela|lame(me|la)?)\b/i;
-const PATRON_ORAL = /\b(chup|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|chupamela|mamamela|lame(me|la)?|en (tu|la|mi) boca|deepthroat|oral|blowjob)\b/i;
+const PATRON_SEXO = /\b(foll|chup|mamad|mam[ao]|lam[ei]|lamiendo|lamer|deepthroat|te la meto|métela|cog[eé]|por el culo|en el culo|follando|penetra|en (tu|la) boca|hasta el fondo|toda la (pija|verga|polla)|handjob|paja|corr[ei]|semen|69|doggy|misioner|cowgirl|chupame|mamame|chupamela|mamamela|lame(me|la)?|bola|bolas|testicul)\b/i;
+const PATRON_ORAL = /\b(chup|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|chupamela|mamamela|lame(me|la)?|en (tu|la|mi) boca|deepthroat|oral|blowjob|bola|bolas|testicul)\b/i;
 const SINONIMOS_VERGA = /\b(polla|pija|poronga|pichula|pito|rabo|pinga|pene|verga)\b/gi;
 
 function normalizarSinonimosSexuales(texto) {
@@ -41,15 +42,13 @@ function normalizarSinonimosSexuales(texto) {
 }
 
 function esSoloMuestra(mensaje) {
-  // Typos: miverga, miverga, muestromiverga, "muestro miverga"
   let m = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
-  m = m.replace(/\b(miverga|miverga|mipija|mipolla|mipene)\b/g, 'mi verga');
+  m = m.replace(/\b(miverga|mipija|mipolla|mipene)\b/g, 'mi verga');
   m = m.replace(/\bmi\s*(verga|pija|polla|pene|poronga|pichula|pinga)\b/g, 'mi verga');
   m = m.replace(/\b(muestromiverga|muestromipija|sacolapija|sacolaverga)\b/g, 'muestro mi verga');
-  m = m.replace(/\bmuestro\s*mi\s*(verga|pija|polla|pene)\b/g, 'muestro mi verga');
   m = normalizarSinonimosSexuales(m);
   const muestra = /\b(le |te |me )?muestro (mi )?(pija|verga|polla|pene)|saco (la )?(pija|verga|polla|pene)|mir[aeá] (mi )?(pija|verga|polla|pene)|ve(s|an)? (mi )?(pija|verga|polla|pene)|te dejo ver|para que (la )?veas|\bmi verga\b|\bmuestro\b.*\b(verga|pija|pene)\b|\b(saco|saca)\b.*\b(verga|pija|pene)\b/i.test(m);
-  const pideActo = /\b(chup|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|foll|met[eo]|cog|paja|handjob|te la meto|métela)\b/i.test(m);
+  const pideActo = /\b(chup|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|foll|met[eo]|cog|paja|handjob|te la meto|métela|bola)\b/i.test(m);
   return muestra && !pideActo;
 }
 
@@ -118,7 +117,7 @@ function actualizarFaseSegunUsuario(mensaje) {
     if (PATRON_CONFIRMACION.test(m) && !/^no\b/i.test(m.trim())) estado.fase = FASE.INTIMO;
     else if (PATRON_NEGACION.test(m)) estado.fase = FASE.NORMAL;
   }
-  if (estado.fase !== FASE.INTIMO && /chup|foll|met[eo]|cog|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|doggy|misioner/i.test(m)) estado.fase = FASE.INTIMO;
+  if (estado.fase !== FASE.INTIMO && /chup|foll|met[eo]|cog|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|doggy|misioner|bola/i.test(m)) estado.fase = FASE.INTIMO;
 }
 function construirContexto(mensajeUsuarioActual = '') {
   const lineas = [
@@ -136,7 +135,7 @@ function construirContexto(mensajeUsuarioActual = '') {
   if (estado.outfitActual?.descripcion) lineas.push('OUTFIT: ' + estado.outfitActual.descripcion);
   return lineas.join('\n');
 }
-function extraerHechos(mensajeUsuario, respuestaBot) {
+function extraerHechos() {
   if (estado.ubicacion) estado.hechos.push(`En ${estado.ubicacion}`);
   estado.hechos = [...new Set(estado.hechos)].slice(-12);
 }
@@ -194,86 +193,118 @@ function partirBloquesMulti(texto, chicaDefault) {
   return bloques.length ? bloques : [{ chica: chicaDefault, texto: texto.trim() }];
 }
 
-function extractAccionParaChica(mensaje) {
-  const t = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
-  if (/en el aire|follando.?en.?el.?aire/.test(t)) return 'follando en el aire';
-  if (/doggystyle|doggy|a cuatro|perrito|por detras|de espaldas|por detrás/.test(t)) return 'doggystyle';
-  if (/misioner/.test(t)) return 'misionero';
-  if (/reverse.?cowgirl|al reves encima/.test(t)) return 'reverse cowgirl';
-  if (/cowgirl|me monto|cabalg/.test(t)) return 'cowgirl';
-  if (/de costado|de lado|sidefuck/.test(t)) return 'sidefuck';
-  if (/anal|por el culo|en el ano/.test(t)) return 'follando anal';
-  if (/standfuck|de pie|contra la pared/.test(t)) return 'de pie';
-  if (/nalgue|nalga|cachetad|azote|pego en el culo/.test(t)) return 'nalgueando';
-  if (/chup|mam[ao]|lam[ei]|oral|blowjob/.test(t)) return 'chupando';
-  if (/handjob|paja|con la mano/.test(t)) return 'handjob';
-  return '';
+function normUser(msg) {
+  let t = String(msg || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  t = t.replace(/\b(miverga|mipija)\b/g, 'mi verga');
+  t = t.replace(SINONIMOS_VERGA, 'verga');
+  return t;
 }
 
-function resolverTagPorAccion(chica, accion, soloNoSex) {
+/**
+ * Intención del usuario por ESPECIFICIDAD (más específico primero).
+ * Nunca colapsar "bolas" → "chupando_todo".
+ */
+function resolverIntencionUsuario(mensaje) {
+  const t = normUser(mensaje);
+  if (!t.trim()) return null;
+
+  if (esSoloMuestra(mensaje)) {
+    return { tagHint: ['usuario_muestra_su_verga', 'muestra_su_verga', 'viendo_verga', 've_mi_verga'], label: 'muestra' };
+  }
+
+  // Oral ESPECÍFICO primero
+  if (/\b(bola|bolas|testicul|testículo|testiculo)s?\b/.test(t)) {
+    return { tagHint: ['chupando_bolas', 'chupando_bola', 'bolas', 'lamiendo_bolas'], label: 'oral_bolas' };
+  }
+  if (/solo la punta|chupa.*(solo )?(la )?punta|lame.*(solo )?(la )?punta|cabeza del|solo la cabeza/.test(t)) {
+    return { tagHint: ['chupando_solo_la_punta', 'punta'], label: 'oral_punta' };
+  }
+  if (/hasta la mitad|la mitad|mitad de/.test(t)) {
+    return { tagHint: ['chupando_solo_la_mitad', 'mitad'], label: 'oral_mitad' };
+  }
+  if (/hasta el fondo|toda la (pija|verga|polla|pene)|deepthroat|se la traga|entera/.test(t)) {
+    return { tagHint: ['chupando_todo_el_pene', 'chupando_todo', 'deep'], label: 'oral_todo' };
+  }
+  if (/\blam(e|er|iendo|eme|ela)\b/.test(t) && !/chup|mam/.test(t)) {
+    return { tagHint: ['lamiendo_pene', 'lamiendo', 'chupando_solo_la_punta'], label: 'oral_lamer' };
+  }
+  if (PATRON_ORAL.test(t) || /\b(chup|mam[ao]|mamad|oral|blowjob)\b/.test(t)) {
+    return { tagHint: ['lamiendo_pene', 'chupando_solo_la_mitad', 'chupando_solo_la_punta', 'chupando', 'oral'], label: 'oral_gen' };
+  }
+
+  if (/en el aire|follando.?en.?el.?aire/.test(t)) {
+    return { tagHint: ['follando_en_el_aire', 'aire'], label: 'aire' };
+  }
+  if (/doggystyle|doggy|a cuatro|perrito|por detras|de espaldas|por detrás/.test(t)) {
+    return { tagHint: ['doggystyle', 'doggy'], label: 'doggy' };
+  }
+  if (/misioner/.test(t)) {
+    return { tagHint: ['misionero', 'mision'], label: 'misionero' };
+  }
+  if (/reverse.?cowgirl|al reves encima/.test(t)) {
+    return { tagHint: ['reverse_cowgirl', 'reverse'], label: 'reverse_cowgirl' };
+  }
+  if (/cowgirl|me monto|cabalg/.test(t)) {
+    return { tagHint: ['cowgirl'], label: 'cowgirl' };
+  }
+  if (/de costado|de lado|sidefuck/.test(t)) {
+    return { tagHint: ['sidefuck', 'side'], label: 'sidefuck' };
+  }
+  if (/\banal\b|por el culo|en el ano/.test(t)) {
+    return { tagHint: ['follando_anal', 'anal'], label: 'anal' };
+  }
+  if (/standfuck|de pie|contra la pared/.test(t)) {
+    return { tagHint: ['standfuck', 'stand', 'de_pie', 'ventana'], label: 'de_pie' };
+  }
+  if (/nalgue|nalga|cachetad|azote|pego en el culo/.test(t)) {
+    return { tagHint: ['usuario_nalguea_el_culo', 'nalg', 'usuario_nalguea'], label: 'nalguear' };
+  }
+  if (/handjob|paja|con la mano|te la jalo/.test(t)) {
+    return { tagHint: ['handjob', 'paja'], label: 'handjob' };
+  }
+  if (/\bbeso|besarte|besando|te beso/.test(t)) {
+    return { tagHint: ['besando', 'bes'], label: 'beso' };
+  }
+  if (/desnuda|desnud|sin ropa/.test(t)) {
+    return { tagHint: ['desnuda', 'quitandose'], label: 'desnuda' };
+  }
+  return null;
+}
+
+function buscarTagEnPack(chica, claves, soloNoSex) {
   const tags = soloNoSex ? listarTagsNoSex(chica) : listarTags(chica);
-  const mapa = {
-    'doggystyle': ['doggystyle', 'doggy'],
-    'misionero': ['misionero', 'mision'],
-    'cowgirl': ['cowgirl'],
-    'reverse cowgirl': ['reverse_cowgirl', 'reverse'],
-    'sidefuck': ['sidefuck', 'side'],
-    'follando en el aire': ['follando_en_el_aire', 'aire'],
-    'follando anal': ['follando_anal', 'anal'],
-    'de pie': ['standfuck', 'stand', 'de_pie'],
-    'nalgueando': ['usuario_nalguea_el_culo', 'nalg', 'usuario_nalguea'],
-    'chupando': ['chupando_todo', 'lamiendo_pene', 'chupando', 'oral'],
-    'handjob': ['handjob', 'paja']
-  };
-  const claves = mapa[accion] || [accion];
   for (const c of claves) {
-    const hit = tags.find((k) => k.toLowerCase().includes(c.toLowerCase()));
+    const hit = tags.find((k) => k.toLowerCase().includes(String(c).toLowerCase()));
     if (hit) return hit;
   }
-  const inf = inferirTagFuerte(chica, '', accion, soloNoSex);
-  if (inf && inf !== 'hablando') return inf;
   return null;
 }
 
 function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
   const userRaw = String(textoUsuario || '');
+  const intencion = resolverIntencionUsuario(userRaw);
 
-  // 0) SOLO muestra verga → forzar tag (incluso en soloNoSex)
-  if (esSoloMuestra(userRaw)) {
-    const tags = listarTags(chica);
-    const hit = tags.find((k) => /usuario_muestra_su_verga|muestra_su_verga|viendo_verga|ve_mi_verga/i.test(k));
-    const elegido = hit || normalizarTag(chica, 'usuario_muestra_su_verga', false) || 'usuario_muestra_su_verga';
-    return { elegido, razon: 'muestra' };
-  }
-
-  // 1) Pose explícita
-  const accion = extractAccionParaChica(userRaw);
-  if (accion) {
-    const tag = resolverTagPorAccion(chica, accion, soloNoSex);
-    if (tag) return { elegido: normalizarTag(chica, tag, soloNoSex), razon: 'accion_explicita:' + accion };
+  if (intencion) {
+    const buscarSinFiltro = intencion.label === 'muestra' || intencion.label.startsWith('oral');
+    const hit = buscarTagEnPack(chica, intencion.tagHint, buscarSinFiltro ? false : soloNoSex);
+    if (hit) return { elegido: hit, razon: 'intencion:' + intencion.label };
+    const forced = normalizarTag(chica, intencion.tagHint[0], buscarSinFiltro ? false : soloNoSex);
+    if (forced && forced !== 'hablando') return { elegido: forced, razon: 'intencion_norm:' + intencion.label };
   }
 
   const user = normalizarSinonimosSexuales(userRaw);
-  const pideOral = PATRON_ORAL.test(user);
   let elegido = 'hablando';
   let razon = 'sin';
+  const inf = inferirTagFuerte(chica, textoBloque, textoUsuario, soloNoSex);
+  const dyn = scoreTagDinamico(chica, `${textoBloque || ''} ${user}`, soloNoSex);
+  if (inf && inf !== 'hablando') { elegido = inf; razon = 'inferido'; }
+  else if (dyn && dyn !== 'hablando') { elegido = dyn; razon = 'dinamico'; }
+  else if (tagModelo && tagModelo !== 'hablando') { elegido = tagModelo; razon = 'modelo'; }
+  elegido = normalizarTag(chica, elegido, soloNoSex);
 
-  if (pideOral) {
-    elegido = inferirTagFuerte(chica, textoBloque, textoUsuario, false) || 'chupando';
-    razon = 'oral';
-  } else {
-    const inf = inferirTagFuerte(chica, textoBloque, textoUsuario, soloNoSex);
-    const dyn = scoreTagDinamico(chica, `${textoBloque || ''} ${user}`, soloNoSex);
-    if (inf && inf !== 'hablando') { elegido = inf; razon = 'inferido'; }
-    else if (dyn && dyn !== 'hablando') { elegido = dyn; razon = 'dinamico'; }
-    else if (tagModelo && tagModelo !== 'hablando') { elegido = tagModelo; razon = 'modelo'; }
-  }
-  elegido = normalizarTag(chica, elegido, pideOral ? false : soloNoSex);
-
-  // forzado_nosex: NO bloquear tags de mostrar/ver verga
   if (soloNoSex) {
     const esMuestraTag = /usuario_muestra_su_verga|viendo_verga|ve_mi_verga|muestra_su_verga/i.test(String(elegido || ''));
-    if (!esMuestraTag && (esTagSex(elegido) || /chup|foll|doggy|anal|cowgirl|mision|handjob|paja|oral/i.test(String(elegido || '')))) {
+    if (!esMuestraTag && (esTagSex(elegido) || /chup|foll|doggy|anal|cowgirl|mision|handjob|paja|oral|bola/i.test(String(elegido || '')))) {
       elegido = 'hablando';
       razon += '+forzado_nosex';
     }
@@ -303,12 +334,19 @@ export async function enviarMensaje(mensajeUsuario) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
   }
-  if (soloMuestraUsuario) system += '\n\n⚠️ Usuario SOLO mostró la pija. Reaccioná. PROHIBIDO chupar. imagen_tag = usuario_muestra_su_verga.';
 
-  const accion = extractAccionParaChica(mensajeUsuario);
-  if (accion) system += `\n\n⚠️ El usuario pidió explícitamente: ${accion}. Describí ESA pose.`;
+  const intencion = resolverIntencionUsuario(mensajeUsuario);
+  if (soloMuestraUsuario) {
+    system += '\n\n⚠️ Usuario SOLO mostró la pija. Reaccioná. PROHIBIDO chupar. imagen_tag = usuario_muestra_su_verga.';
+  } else if (intencion) {
+    system += `\n\n⚠️ El usuario pidió específicamente: ${intencion.label}. Describí ESA acción (no inventes otra pose).`;
+  }
 
-  logGroup('Request', { chica: estado.chica, fase: estado.fase, escenaSex, soloNoSex, soloMuestra: soloMuestraUsuario, mensajeUsuario, accion: accion || '(ninguna)' });
+  logGroup('Request', {
+    chica: estado.chica, fase: estado.fase, escenaSex, soloNoSex,
+    soloMuestra: soloMuestraUsuario, mensajeUsuario,
+    intencion: intencion ? intencion.label : '(ninguna)'
+  });
 
   const messages = [
     { role: 'system', content: system },
@@ -333,17 +371,20 @@ export async function enviarMensaje(mensajeUsuario) {
   if (!parsed) parsed = { respuesta: `*te miro* Ay ${estado.nombreUsuario}... decime de nuevo.`, imagen_tag: 'hablando' };
 
   postProcesarFase(parsed.respuesta);
-  extraerHechos(mensajeUsuario, parsed.respuesta);
+  extraerHechos();
   if (estado.fase !== FASE.INTIMO && !soloMuestraUsuario && PATRON_SEXO.test(mensajeUsuario)) estado.fase = FASE.INTIMO;
 
   const bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
-  const ahoraSoloNoSex = soloMuestraUsuario ? false : !(!soloMuestraUsuario && (esEscenaSex() || PATRON_SEXO.test(mensajeUsuario) || PATRON_ORAL.test(mensajeUsuario)));
+  const ahoraSoloNoSex = soloMuestraUsuario ? false : !escenaSex && !(PATRON_SEXO.test(mensajeUsuario) || PATRON_ORAL.test(mensajeUsuario));
 
   const partes = bloques.map((b) => {
     if (b.chica === 'Aldo') return { chica: 'Aldo', texto: b.texto, imagenUrl: '', audioUrl: '', descripcionImg: '', imagen_tag: '' };
     const { elegido, razon } = elegirTag(b.chica, parsed.imagen_tag || '', b.texto, mensajeUsuario, ahoraSoloNoSex);
     const media = resolverImagen(b.chica, elegido, soloMuestraUsuario ? false : ahoraSoloNoSex);
-    logGroup(`Tag → ${b.chica}`, { accion: accion || '(ninguna)', razon, tagElegido: elegido, tagFinal: media.tag, soloMuestra: soloMuestraUsuario });
+    logGroup(`Tag → ${b.chica}`, {
+      intencion: intencion ? intencion.label : '(ninguna)',
+      razon, tagElegido: elegido, tagFinal: media.tag
+    });
     return { chica: b.chica, texto: b.texto, imagenUrl: media.url, audioUrl: media.audio || '', descripcionImg: media.descripcion || '', imagen_tag: media.tag || elegido };
   });
 
