@@ -14,18 +14,10 @@ const PATRON_NO_SEX =
 const PATRON_SEX =
   /chup|oral|pene|verga|pija|doggy|mision|anal|cowgirl|handjob|paja|69|foll|cum|corro|semen|dedo|squirt|lamiendo|nalg|standfuck|sidefuck|mattin|estir|ano|concha|tetas?_de|agarra_el_culo(?!_.*NOSEX)|rozo_mi|post_sexo|usuario_chupa|metiendo_dedos/i;
 
-// Sinónimos de genitalia masculina → se tratan como equivalentes
 const SINONIMOS_VERGA = /\b(polla|pija|poronga|pichula|pito|rabo|pinga|pene|verga)\b/gi;
 
-/**
- * Normaliza el texto reemplazando todos los sinónimos de genitalia
- * por "verga" y "pene" para que los patrones coincidan igual.
- */
 function normalizarSinonimosSexuales(texto) {
-  let t = String(texto || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '');
+  let t = String(texto || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   t = t.replace(SINONIMOS_VERGA, 'verga');
   t = t.replace(/\bverga\b/g, 'verga pene');
   return t;
@@ -253,6 +245,31 @@ export function resolverImagen(chica, tag = 'hablando', soloNoSex = false) {
     descripcion: entry.descripcion || '',
     tag: tagOk
   };
+}
+
+/** Descripción visual de un tag concreto (ropa, pose, detalle). */
+export function getTagDescripcion(chica, tag) {
+  const d = QuintiImagenesPrueba?.[chica];
+  if (!d || !tag) return '';
+  const entry = d.imagenes?.[tag];
+  if (!entry) return '';
+  if (typeof entry === 'string') return '';
+  return String(entry.descripcion || '').trim();
+}
+
+/** Lista tags con descripción no vacía: [{ tag, descripcion }, ...] */
+export function listarDescripcionesTags(chica, soloNoSex = false) {
+  let tags = listarTags(chica);
+  if (soloNoSex) {
+    const noSex = listarTagsNoSex(chica);
+    if (noSex.length) tags = noSex;
+  }
+  const out = [];
+  for (const t of tags) {
+    const desc = getTagDescripcion(chica, t);
+    if (desc) out.push({ tag: t, descripcion: desc });
+  }
+  return out;
 }
 
 export { QuintiImagenesPrueba };
