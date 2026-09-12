@@ -56,7 +56,6 @@ const PATRON_NEGACION = /\b(no|para|espera|despacio|mejor no|ahora no)\b/i;
 const PATRON_SEXO = /\b(foll|chup|mamad|mam[ao]|lam[ei]|lamiendo|lamer|deepthroat|te la meto|métela|cog[eé]|por el culo|en el culo|follando|penetra|en (tu|la) boca|hasta el fondo|toda la (pija|verga|polla)|handjob|paja|corr[ei]|semen|69|doggy|misioner|cowgirl|chupame|mamame|chupamela|mamamela|lame(me|la)?)\b/i;
 const PATRON_ACCION = /chup|mam[ao]|lam[ei]|lamiendo|lamer|foll|cog|beso|besarte|desnud|teta|pecho|dedo|paja|handjob|nalg|doggy|mision|cowgirl|anal|69|corr|semen|agarra|mont[aá]|de pie|ventana|sujetador|lencer|pene|verga|pija|polla|concha|culo|ano|met[eo]|penetr/i;
 const PATRON_ORAL = /\b(chup|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|chupamela|mamamela|lame(me|la)?|en (tu|la|mi) boca|deepthroat|oral|blowjob)\b/i;
-
 const SINONIMOS_VERGA = /\b(polla|pija|poronga|pichula|pito|rabo|pinga|pene|verga)\b/gi;
 
 function normalizarSinonimosSexuales(texto) {
@@ -80,9 +79,7 @@ function logGroup(title, obj) {
   console.groupCollapsed('%c[Quinti] ' + title, 'color:#a78bfa;font-weight:bold');
   if (obj && typeof obj === 'object') {
     for (const [k, v] of Object.entries(obj)) console.log(k + ':', v);
-  } else {
-    console.log(obj);
-  }
+  } else console.log(obj);
   console.groupEnd();
 }
 
@@ -128,11 +125,13 @@ export function iniciarHistoria(chica, historiaId) {
   return { texto, chica, imagenUrl: media.url, audioUrl: media.audio || '', descripcionImg: media.descripcion || '', imagen_tag: media.tag || 'hablando', fase: estado.fase };
 }
 export function setChica(nombre) { iniciarChatLibre(nombre); }
+
 function esEscenaSex() {
   if (estado.fase === FASE.INTIMO) return true;
   const ultimos = estado.historial.slice(-6).map((h) => h.content || '').join(' ');
   return PATRON_SEXO.test(ultimos);
 }
+
 function detectarPersonajesEnContexto(textoUsuario) {
   const t = (textoUsuario || '').toLowerCase();
   const found = new Set(estado.chicasActivas);
@@ -143,13 +142,14 @@ function detectarPersonajesEnContexto(textoUsuario) {
   if (/la del lazo|energ[eé]tica/.test(t)) found.add('Yotsuba');
   if (/la seria|horquillas/.test(t)) found.add('Itsuki');
   if (/semielfa|platead/.test(t)) found.add('Emilia');
-  if (/\baldo\b|mi amigo|el pibe|el de f[uú]tbol|mejor amigo/.test(t)) found.add('Aldo');
-  if (/hermanas?|las cinco|todas|en casa|en el living|en la cocina|en el depto|fiesta en casa|nos juntamos|vienen las|están las/i.test(t)) {
+  // Aldo SOLO si se nombra explícito (no por "amigo", "jugar", "play", etc.)
+  if (/\baldo\b/.test(t)) found.add('Aldo');
+  if (/hermanas?|las cinco|todas las|vienen las|están las|las quintillizas/i.test(t)) {
     for (const n of TODAS_CHICAS) found.add(n);
   }
-  if (/f[uú]tbol|partido|jugar|ranked|consola|play|xbox|steam|fifa|amigo|salimos|quedamos|birra|asado/i.test(t)) found.add('Aldo');
   return [...found].filter((n) => existePersonaje(n));
 }
+
 function actualizarFaseSegunUsuario(mensaje) {
   const m = mensaje.toLowerCase();
   if (estado.fase === FASE.NORMAL || estado.fase === FASE.TRASLADO) {
@@ -169,6 +169,7 @@ function actualizarFaseSegunUsuario(mensaje) {
     estado.fase = FASE.INTIMO;
   }
 }
+
 function construirContexto(mensajeUsuarioActual = '') {
   const lineas = [
     `Fase: ${estado.fase}`,
@@ -188,14 +189,16 @@ function construirContexto(mensajeUsuarioActual = '') {
   if (estado.hechos.length) lineas.push('Hechos: ' + estado.hechos.slice(-8).join(' | '));
   return lineas.join('\n');
 }
+
 function extraerHechos(mensajeUsuario, respuestaBot) {
   const texto = `${mensajeUsuario} ${respuestaBot}`.toLowerCase();
   if (/novia|novio|pareja/.test(texto)) estado.hechos.push('Relación romántica');
   if (/te amo|te quiero/.test(texto)) estado.hechos.push('Declaración afectiva');
   if (estado.ubicacion) estado.hechos.push(`En ${estado.ubicacion}`);
-  if (/aldo/.test(texto)) estado.hechos.push('Aldo en escena');
+  if (/\baldo\b/.test(texto) && estado.chicasActivas.includes('Aldo')) estado.hechos.push('Aldo en escena');
   estado.hechos = [...new Set(estado.hechos)].slice(-12);
 }
+
 async function llamarGroq(messages) {
   if (!GROQ_KEYS || !GROQ_KEYS.length) throw new Error('Configura tus API keys en config.js');
   let ultimoError = null;
@@ -216,6 +219,7 @@ async function llamarGroq(messages) {
   }
   throw ultimoError || new Error('Falló la API / sin keys válidas');
 }
+
 function parseJsonRespuesta(raw) {
   if (!raw) return null;
   let t = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
@@ -228,11 +232,13 @@ function parseJsonRespuesta(raw) {
   } catch (_) {}
   return null;
 }
+
 function postProcesarFase(respuestaTexto) {
   if (estado.fase === FASE.TRASLADO) {
     if (/ya estamos|llegamos|habitaci[oó]n|cierro la puerta|a solas/i.test(respuestaTexto)) estado.fase = FASE.LLEGADA;
   }
 }
+
 function partirBloquesMulti(texto, chicaDefault) {
   const re = /\[\s*(Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia|Aldo)\s*\]\s*:/gi;
   const indices = [];
@@ -255,6 +261,7 @@ function partirBloquesMulti(texto, chicaDefault) {
   }
   return bloques.length ? bloques : [{ chica: chicaDefault, texto: texto.trim() }];
 }
+
 function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
   const userRaw = String(textoUsuario || '');
   const user = normalizarSinonimosSexuales(userRaw);
@@ -304,6 +311,7 @@ function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
   }
   return { elegido, tagModeloNorm, tagInferido, hayAccion, razon };
 }
+
 export async function enviarMensaje(mensajeUsuario) {
   if (!estado.chica) throw new Error('Selecciona una chica primero');
   try { await ensureImagenesLoaded(); } catch (_) {}
@@ -340,8 +348,18 @@ export async function enviarMensaje(mensajeUsuario) {
   extraerHechos(mensajeUsuario, parsed.respuesta);
   if (estado.fase !== FASE.INTIMO && !soloMuestraUsuario && /chup|foll|met[eo]|cog|mam[ao]|lam[ei]|lamiendo|lamer|chupame|mamame/i.test(mensajeUsuario)) estado.fase = FASE.INTIMO;
   const bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
+  // Solo sumar personajes nuevos si el USUARIO los trajo a escena (enContexto).
   for (const b of bloques) {
-    if (b.chica && !estado.chicasActivas.includes(b.chica) && existePersonaje(b.chica)) estado.chicasActivas.push(b.chica);
+    if (!b.chica || estado.chicasActivas.includes(b.chica) || !existePersonaje(b.chica)) continue;
+    if (enContexto.includes(b.chica) || b.chica === estado.chica) {
+      estado.chicasActivas.push(b.chica);
+    }
+  }
+  // Si la IA inventó un bloque de alguien no invitado, reasignar a la chica principal
+  for (const b of bloques) {
+    if (b.chica && !estado.chicasActivas.includes(b.chica)) {
+      b.chica = estado.chica;
+    }
   }
   const ahoraEscenaSex = !soloMuestraUsuario && (esEscenaSex() || PATRON_SEXO.test(mensajeUsuario) || PATRON_ORAL.test(mensajeUsuario));
   const ahoraSoloNoSex = !ahoraEscenaSex;
@@ -358,6 +376,7 @@ export async function enviarMensaje(mensajeUsuario) {
   logGroup('Respuesta final', { fase: estado.fase, partes: partes.map((p) => `${p.chica}: tag=${p.imagen_tag}`).join(' | ') });
   return { partes, texto: parsed.respuesta, imagen_tag: partes[0]?.imagen_tag || 'hablando', imagenUrl: partes[0]?.imagenUrl || '', audioUrl: partes[0]?.audioUrl || '', descripcionImg: partes[0]?.descripcionImg || '', fase: estado.fase, chica: estado.chica, chicasActivas: [...estado.chicasActivas] };
 }
+
 export function resetChat() {
   estado.historial = []; estado.fase = FASE.NORMAL; estado.ubicacion = null; estado.hechos = [];
   estado.chicasActivas = estado.chica ? [estado.chica] : []; estado.modo = 'libre'; estado.historiaId = null;
