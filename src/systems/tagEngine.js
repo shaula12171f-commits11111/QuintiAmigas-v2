@@ -1,7 +1,6 @@
 // ============================================================
 //  tagEngine.js — Sistema de tags estilo Nakardas (port a v2)
 //  Prioridad: usuario > continuidad > respuesta IA > modelo > hablando
-//  Parser con pesos (verbo > objeto > pose) + continuar/cambiar
 // ============================================================
 
 import {
@@ -41,7 +40,8 @@ const PATRONES_ASTERISCO = [
   { re: /\*[^*]*(?:handjob|paja|con la mano|jal[ao])[^*]*\*/gi, tag: 'handjob_paja', peso: PESOS.VERBO },
   { re: /\*[^*]*(?:desnud|sin ropa)[^*]*\*/gi, tag: 'desnuda', peso: PESOS.VERBO },
   { re: /\*[^*]*(?:mostrando|ense[nñ]a)[^*]*(?:culo|nalga|tanga)[^*]*\*/gi, tag: 'mostrando_culo_tanga', peso: PESOS.VERBO },
-  { re: /\*[^*]*(?:muestro|muestra)[^*]*(?:verga|pija|polla|pene)[^*]*\*/gi, tag: 'usuario_muestra_su_verga', peso: PESOS.VERBO }
+  { re: /\*[^*]*(?:muestro|muestra)[^*]*(?:verga|pija|polla|pene)[^*]*\*/gi, tag: 'usuario_muestra_su_verga', peso: PESOS.VERBO },
+  { re: /\*[^*]*(?:agarr[oóa]|apret[oóa]|manose)[^*]*(?:culo|nalga)[^*]*\*/gi, tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO }
 ];
 
 const PALABRAS_CLAVE = [
@@ -65,7 +65,8 @@ const PALABRAS_CLAVE = [
   { palabras: ['desnudate', 'desnúdate', 'desnuda', 'sin ropa', 'quitate la ropa'], tag: 'desnuda', peso: PESOS.VERBO },
   { palabras: ['muestra el culo', 'mostrame el culo', 'enseña el culo', 'da la vuelta'], tag: 'mostrando_culo_tanga', peso: PESOS.VERBO },
   { palabras: ['te muestro', 'muestro mi', 'saco la pija', 'saco la verga', 'mira mi verga', 'mira mi pija'], tag: 'usuario_muestra_su_verga', peso: PESOS.VERBO },
-  { palabras: ['agarra el culo', 'agarrame el culo', 'aprieta el culo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
+  { palabras: ['agarra el culo', 'agarrame el culo', 'aprieta el culo', 'le agarro el culo', 'le agarra el culo', 'agarro el culo', 'agarrando el culo', 'le aprieto el culo', 'manoseo el culo', 'le manoseo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
+  { palabras: ['agarro', 'agarrando', 'aprieto', 'manoseo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
   { palabras: ['nalguea', 'nalgueame', 'azote en el culo', 'cachetada en el culo'], tag: 'usuario_nalguea_el_culo', peso: PESOS.VERBO }
 ];
 
@@ -231,7 +232,7 @@ export function resolverTagEscena({
     }
   }
 
-  const userTieneAlgoSexual = userDet.puntuacion >= 6 || /chup|foll|mam[ao]|doggy|anal|paja|besame|desnud|verga|pija|polla/.test(norm(mensajeUsuario));
+  const userTieneAlgoSexual = userDet.puntuacion >= 6 || /chup|foll|mam[ao]|doggy|anal|paja|besame|desnud|verga|pija|polla|agarr|apriet|manose|nalgue|culo/.test(norm(mensajeUsuario));
   if (soloNoSex && !userTieneAlgoSexual && cont.intencion !== 'continuar') {
     if (tagModelo && tagModelo !== 'hablando') {
       const neutro = /^(hablando|selfie|ropa_|besando$|mostrando_sujetador|quitandose|moviendo_el_culo)/i.test(tagModelo);
@@ -250,7 +251,7 @@ export function resolverTagEscena({
       let hit = encontrarTagMasPertinente(botDet.tag, tags);
       if (!hit) hit = normalizarTag(chica, botDet.tag, soloNoSex);
       if (hit && hit !== 'hablando') {
-        if (!(soloNoSex && esTagSex(hit) && !/usuario_muestra|viendo_verga/.test(hit))) {
+        if (!(soloNoSex && esTagSex(hit) && !/usuario_muestra|viendo_verga|agarra/.test(hit))) {
           return {
             tag: hit,
             razon: `bot:${botDet.tag}(${botDet.puntuacion})`,
@@ -264,7 +265,7 @@ export function resolverTagEscena({
 
   if (tagModelo && tagModelo !== 'hablando') {
     const hit = encontrarTagMasPertinente(tagModelo, tags) || normalizarTag(chica, tagModelo, soloNoSex);
-    if (hit && !(soloNoSex && esTagSex(hit) && !/usuario_muestra|viendo_verga/.test(hit))) {
+    if (hit && !(soloNoSex && esTagSex(hit) && !/usuario_muestra|viendo_verga|agarra/.test(hit))) {
       return { tag: hit, razon: 'modelo', puntuacion: 0, fuente: 'modelo' };
     }
   }
