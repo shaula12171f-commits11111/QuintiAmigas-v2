@@ -47,7 +47,9 @@ const PATRONES_ASTERISCO = [
   { re: /\*[^*]*(?:desnud|sin ropa)[^*]*\*/gi, tag: 'desnuda', peso: PESOS.VERBO },
   { re: /\*[^*]*(?:mostrando|ense[nñ]a)[^*]*(?:culo|nalga|tanga)[^*]*\*/gi, tag: 'mostrando_culo_tanga', peso: PESOS.VERBO },
   { re: /\*[^*]*(?:muestro|muestra)[^*]*(?:verga|pija|polla|pene)[^*]*\*/gi, tag: 'usuario_muestra_su_verga', peso: PESOS.VERBO },
-  { re: /\*[^*]*(?:agarr[oóa]|apret[oóa]|manose)[^*]*(?:culo|nalga)[^*]*\*/gi, tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO }
+  { re: /\*[^*]*(?:agarr[oóa]|apret[oóa]|manose)[^*]*(?:culo|nalga)[^*]*\*/gi, tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
+  { re: /\*[^*]*(?:nalgue|nalga|cachetad|azote|pego)[^*]*(?:culo|nalga)[^*]*\*/gi, tag: 'usuario_nalguea_el_culo', peso: PESOS.VERBO },
+  { re: /\*[^*]*(?:culo|nalga)[^*]*(?:nalgue|cachetad|azote)[^*]*\*/gi, tag: 'usuario_nalguea_el_culo', peso: PESOS.VERBO }
 ];
 
 const PALABRAS_CLAVE = [
@@ -73,7 +75,13 @@ const PALABRAS_CLAVE = [
   { palabras: ['te muestro', 'muestro mi', 'saco la pija', 'saco la verga', 'mira mi verga', 'mira mi pija'], tag: 'usuario_muestra_su_verga', peso: PESOS.VERBO },
   { palabras: ['agarra el culo', 'agarrame el culo', 'aprieta el culo', 'le agarro el culo', 'le agarra el culo', 'agarro el culo', 'agarrando el culo', 'le aprieto el culo', 'manoseo el culo', 'le manoseo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
   { palabras: ['agarro', 'agarrando', 'aprieto', 'manoseo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
-  { palabras: ['nalguea', 'nalgueame', 'azote en el culo', 'cachetada en el culo'], tag: 'usuario_nalguea_el_culo', peso: PESOS.VERBO },
+  // === NALGUEAR (ampliado: nalgueo, nalgue, nalga, etc.) ===
+  { palabras: [
+    'nalguea', 'nalgueame', 'nalgueo', 'nalgue', 'nalga', 'nalgas',
+    'azote en el culo', 'cachetada en el culo', 'cachetada', 'azote',
+    'pego en el culo', 'le doy una nalgada', 'nalgada', 'nalgueándole',
+    'le nalgueo', 'te nalgueo', 'la nalgueo', 'lo nalgueo'
+  ], tag: 'usuario_nalguea_el_culo', peso: PESOS.VERBO },
   // === CUM / FACIAL (frases exactas primero) ===
   { palabras: ['me corro en su cara', 'corro en su cara', 'me corro en la cara', 'corrida en la cara', 'corrida en su cara', 'semen en su cara', 'semen en la cara', 'leche en su cara', 'leche en la cara', 'facial', 'cum en su cara', 'cum en la cara', 'acabo en su cara', 'acabo en la cara'], tag: 'me_corro_en_su_cara', peso: PESOS.VERBO + 8 },
   { palabras: ['me corro en su boca', 'corro en su boca', 'me corro en la boca', 'corrida en la boca', 'corrida en su boca', 'semen en su boca', 'semen en la boca', 'leche en su boca', 'leche en la boca', 'cum en su boca', 'acabo en su boca', 'acabo en la boca', 'traga el semen', 'traga la leche'], tag: 'me_corro_en_su_boca', peso: PESOS.VERBO + 6 },
@@ -93,6 +101,9 @@ const PATRONES_CAMBIAR = [
   /\botra cosa\b/i, /\bdistinto\b/i, /\bpasemos a\b/i, /\bdej[aá] eso\b/i,
   /\bcambiemos\b/i
 ];
+
+// Palabras que indican acción NUEVA (no continuidad ciega)
+const PALABRAS_ACCION_CLARA = /\b(nalgue|nalga|cachetad|azote|pego|agarr|apriet|manose|chup|mam[ao]|lam[ei]|foll|cog|met[eo]|bes[ao]|desnud|muestro|saco|paja|handjob|doggy|mision|cowgirl|anal|corro|semen|cum)\b/i;
 
 function norm(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -168,12 +179,19 @@ export function detectarIntencionContinuidad(mensaje, accionEnCurso = null) {
   if (!mensaje || !String(mensaje).trim()) {
     return { intencion: 'neutral', confianza: 0 };
   }
+  const msg = String(mensaje).trim();
   let cont = 0, camb = 0;
-  for (const p of PATRONES_CONTINUAR) if (p.test(mensaje)) cont++;
-  for (const p of PATRONES_CAMBIAR) if (p.test(mensaje)) camb++;
+  for (const p of PATRONES_CONTINUAR) if (p.test(msg)) cont++;
+  for (const p of PATRONES_CAMBIAR) if (p.test(msg)) camb++;
+
+  // Mensajes cortos con acción clara = NO continuidad (es una acción nueva)
+  if (msg.length < 18 && PALABRAS_ACCION_CLARA.test(msg)) {
+    return { intencion: 'cambiar', confianza: 0.7 };
+  }
 
   if (cont === 0 && camb === 0) {
-    if (accionEnCurso && String(mensaje).trim().length < 12) {
+    // Solo continuidad por mensaje corto si NO tiene palabras de acción
+    if (accionEnCurso && msg.length < 12 && !PALABRAS_ACCION_CLARA.test(msg)) {
       return { intencion: 'continuar', confianza: 0.35 };
     }
     return { intencion: 'neutral', confianza: 0.2 };
@@ -226,12 +244,30 @@ export function resolverTagEscena({
   textoBot = '',
   tagModelo = '',
   soloNoSex = true,
-  accionAnterior = null
+  accionAnterior = null,
+  intencionUsuario = null   // { label, tagHint[] } desde logica.js
 }) {
   const tags = tagsDe(chica, soloNoSex);
   const userDet = detectarAccionEnTexto(mensajeUsuario, { umbral: UMBRAL });
   const cont = detectarIntencionContinuidad(mensajeUsuario, accionAnterior);
 
+  // 0. Pista fuerte desde logica.js (resolverIntencionUsuario)
+  if (intencionUsuario && Array.isArray(intencionUsuario.tagHint) && intencionUsuario.tagHint.length) {
+    for (const hint of intencionUsuario.tagHint) {
+      let hit = encontrarTagMasPertinente(hint, tags);
+      if (!hit) hit = normalizarTag(chica, hint, soloNoSex);
+      if (hit && hit !== 'hablando') {
+        return {
+          tag: hit,
+          razon: `intencion:${intencionUsuario.label || hint}`,
+          puntuacion: 15,
+          fuente: 'intencion'
+        };
+      }
+    }
+  }
+
+  // 1. Detección directa del texto del usuario
   if (userDet.tag) {
     let hit = encontrarTagMasPertinente(userDet.tag, tags);
     if (!hit) hit = normalizarTag(chica, userDet.tag, soloNoSex);
@@ -245,6 +281,7 @@ export function resolverTagEscena({
     }
   }
 
+  // 2. Continuidad (solo si realmente quiere continuar y no hay acción nueva)
   if (cont.intencion === 'continuar' && accionAnterior && accionAnterior !== 'hablando') {
     const hit = encontrarTagMasPertinente(accionAnterior, tags) ||
       (tags.includes(accionAnterior) ? accionAnterior : null);
