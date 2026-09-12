@@ -604,23 +604,35 @@ export function getDescripcionChica(chica) {
   return QuintiImagenesPrueba?.[chica]?.descripcion || '';
 }
 
+function parseOriginalModule(text) {
+  const sandbox = { window: {}, exports: {}, module: { exports: {} } };
+  const wrapped =
+    text
+      .replace(/export\s*\{\s*QuintiImagenesPrueba\s*\}\s*;?/g, '')
+      .replace(/export\s+\{\s*QuintiImagenesPrueba\s*\}\s*;?/g, '') +
+    '\n; return (typeof QuintiImagenesPrueba !== "undefined" ? QuintiImagenesPrueba : (window && window.QuintiImagenesPrueba));';
+  const fn = new Function('window', 'exports', 'module', wrapped);
+  const result = fn(sandbox.window, sandbox.exports, sandbox.module);
+  const data = result || sandbox.window.QuintiImagenesPrueba;
+  if (!data || typeof data !== 'object') throw new Error('No se pudo parsear QuintiImagenesPrueba');
+  return data;
+}
+
 export async function ensureImagenesLoaded() {
   if (QuintiImagenesPrueba) return QuintiImagenesPrueba;
   if (_loadPromise) return _loadPromise;
   _loadPromise = (async () => {
-    try {
-      const res = await fetch(ORIGINAL_URL + '?t=' + Date.now());
-      if (!res.ok) throw new Error('load fail');
-      const code = await res.text();
-      // eval-ish: the remote file assigns to window or exports QuintiImagenesPrueba
-      const fn = new Function(code + '; return typeof QuintiImagenesPrueba !== "undefined" ? QuintiImagenesPrueba : null;');
-      QuintiImagenesPrueba = fn() || {};
-    } catch (e) {
-      console.warn('[Quinti] No se pudieron cargar imágenes remotas', e);
-      QuintiImagenesPrueba = QuintiImagenesPrueba || {};
-    }
+    const res = await fetch(ORIGINAL_URL);
+    if (!res.ok) throw new Error('No se pudo descargar imagenes.js original: ' + res.status);
+    const text = await res.text();
+    QuintiImagenesPrueba = parseOriginalModule(text);
+    if (typeof window !== 'undefined') window.QuintiImagenesPrueba = QuintiImagenesPrueba;
     return QuintiImagenesPrueba;
-  })();
+  })().catch((e) => {
+    console.warn('[Quinti] No se pudieron cargar imágenes remotas', e);
+    QuintiImagenesPrueba = QuintiImagenesPrueba || {};
+    return QuintiImagenesPrueba;
+  });
   return _loadPromise;
 }
 
