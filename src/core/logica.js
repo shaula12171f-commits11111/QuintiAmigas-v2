@@ -254,14 +254,15 @@ function buscarTagEnPack(chica, claves, soloNoSex) {
 }
 
 /** Elegir tag con motor Nakardas: usuario > continuidad > bot > modelo > hablando */
-function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
+function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex, intencionUsuario = null) {
   const resultado = resolverTagEscena({
     chica,
     mensajeUsuario: textoUsuario || '',
     textoBot: textoBloque || '',
     tagModelo: tagModelo || '',
     soloNoSex: !!soloNoSex,
-    accionAnterior: estado.accionActual
+    accionAnterior: estado.accionActual,
+    intencionUsuario: intencionUsuario || null
   });
   let elegido = normalizarTag(chica, resultado.tag || 'hablando', soloNoSex);
   let razon = resultado.razon || 'sin';
@@ -343,7 +344,7 @@ export async function enviarMensaje(mensajeUsuario) {
 
   const partes = bloques.map((b) => {
     if (b.chica === 'Aldo') return { chica: 'Aldo', texto: b.texto, imagenUrl: '', audioUrl: '', descripcionImg: '', imagen_tag: '' };
-    const { elegido, razon, fuente } = elegirTag(b.chica, parsed.imagen_tag || '', b.texto, mensajeUsuario, ahoraSoloNoSex);
+    const { elegido, razon, fuente } = elegirTag(b.chica, parsed.imagen_tag || '', b.texto, mensajeUsuario, ahoraSoloNoSex, intencion);
     const media = resolverImagen(b.chica, elegido, soloMuestraUsuario ? false : ahoraSoloNoSex);
     logGroup(`Tag → ${b.chica}`, {
       intencion: intencion ? intencion.label : '(ninguna)',
