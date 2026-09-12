@@ -51,7 +51,6 @@ const MAX_HISTORIAL = 20;
 const PATRON_LUGAR_PRIVADO = /\b(hotel|motel|habitaci[oó]n|casa|departamento|depto|pieza|cuarto|mi casa|tu casa|a solas|lugar m[aá]s privado)\b/i;
 const PATRON_CONFIRMACION = /\b(s[ií]|claro|vamos|dale|quiero|contin[uú]a|continuar|foll|chup|besame|t[oó]came|hazlo|hacelo|por favor|ya)\b/i;
 const PATRON_NEGACION = /\b(no|para|espera|despacio|mejor no|ahora no)\b/i;
-// culo solo NO cuenta como sexo (agarrar culo sin más); sí "por el culo" / "en el culo"
 const PATRON_SEXO = /\b(foll|chup|mamad|pija|verga|pene|coño|concha|anal|corr|semen|tetas?|pez[oó]n|dedo|69|doggy|misioner|cowgirl|handjob|paja|desnud|beso.*sucio|te la meto|métela|cog|por el culo|en el culo|follando)/i;
 const PATRON_ACCION = /chup|mam[ao]|foll|cog|beso|besarte|desnud|teta|pecho|dedo|paja|handjob|nalg|doggy|mision|cowgirl|anal|69|corr|semen|agarra|mont[aá]|de pie|ventana|sujetador|lencer|pene|verga|pija|concha|culo|ano|met[eo]|penetr/i;
 
@@ -192,7 +191,8 @@ function actualizarFaseSegunUsuario(mensaje) {
     if (PATRON_CONFIRMACION.test(m) && !/^no\b/i.test(m.trim())) estado.fase = FASE.INTIMO;
     else if (PATRON_NEGACION.test(m)) estado.fase = FASE.NORMAL;
   }
-  if (estado.fase !== FASE.INTIMO && PATRON_SEXO.test(m) && /chup|foll|met[eo]|cog|mam[ao]/i.test(m)) {
+  // Solo subir a íntimo si pide ACTO, no solo "mostrar pija"
+  if (estado.fase !== FASE.INTIMO && /chup|foll|met[eo]|cog|mam[ao]|mamad/i.test(m)) {
     estado.fase = FASE.INTIMO;
   }
 }
@@ -207,7 +207,7 @@ function construirContexto() {
   ];
   if (estado.chicasActivas.length > 1) {
     lineas.push(
-      'MULTI: Hay varios personajes. Cada uno puede hablar en bloques [Nombre]: texto. Deben reaccionar entre ellos y a lo último que se dijo. No ignoren lo que dijo el otro. Insertá a alguien SOLO si está en contexto o ya presente; no fuerces apariciones.'
+      'MULTI: Hay varios personajes. Cada uno puede hablar en bloques [Nombre]: texto. Deben reaccionar entre ellos y a lo último que se dijo.'
     );
   }
   if (estado.ubicacion) lineas.push(`Ubicación: ${estado.ubicacion}`);
@@ -215,9 +215,9 @@ function construirContexto() {
     lineas.push('Aún NO sexo explícito: llegada + pedir confirmación.');
   }
   if (estado.fase === FASE.INTIMO) {
-    lineas.push('Escena íntima activa: sé explícita, sucia y en el momento. Elegí imagen_tag de la acción que estás haciendo AHORA (chupando_solo_la_mitad_del_pene, doggy, etc), NO "hablando".');
+    lineas.push('Escena íntima activa: sé explícita. imagen_tag = acción real del mensaje.');
   } else {
-    lineas.push('Escena SIN sexo explícito ahora: usá imagen_tag no-sex (hablando, ropa_*, besando, desnuda, *_NOSEX...).');
+    lineas.push('Sin acto sexual pedido aún: si solo te mostró la pija, REACCIONÁ (mirá, comentá) SIN chupar. Tag: Viendo_Verga o hablando.');
   }
   if (estado.hechos.length) lineas.push('Hechos: ' + estado.hechos.slice(-8).join(' | '));
   return lineas.join('\n');
@@ -316,7 +316,8 @@ function partirBloquesMulti(texto, chicaDefault) {
 }
 
 function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
-  const combinado = `${textoBloque || ''} ${textoUsuario || ''}`;
+  const user = String(textoUsuario || '');
+  const combinado = `${textoBloque || ''} ${user}`;
   const hayAccion = PATRON_ACCION.test(combinado);
 
   const tagInferido = inferirTagFuerte(chica, textoBloque, textoUsuario, soloNoSex);
@@ -325,32 +326,45 @@ function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex) {
   let elegido;
   let razon = '';
 
-  const pidePunta = /solo la punta|la punta|cabeza del/i.test(combinado);
-  const pideMitad = /hasta la mitad|la mitad|mitad de/i.test(combinado);
-  const pideTodo = /hasta el fondo|toda la (pija|verga|polla)|deepthroat|entera/i.test(combinado);
+  // Nivel oral solo desde el USUARIO (no desde narración del bot)
+  const pidePunta = /solo la punta|chupa.*(punta|cabeza)|cabeza del/i.test(user);
+  const pideMitad = /hasta la mitad|la mitad|mitad de/i.test(user);
+  const pideTodo = /hasta el fondo|toda la (pija|verga|polla)|deepthroat|entera/i.test(user);
+  const pideOral = /chup|mam[ao]|mamad|en (tu|la) boca|deep/i.test(user);
 
-  if (hayAccion) {
+  const soloMuestra =
+    /muestro|te muestro|le muestro|saco (la )?(pija|verga|polla)|mir[ae] mi (pija|verga|polla)|ve(s|an)? mi (pija|verga|polla)|te dejo ver/i.test(
+      user
+    ) && !pideOral;
+
+  if (soloMuestra) {
+    if (tagInferido && !/chup/i.test(tagInferido)) {
+      elegido = tagInferido;
+      razon = 'usuario solo muestra → tag mirar/ver';
+    } else if (tagModeloNorm && !/chup/i.test(tagModeloNorm)) {
+      elegido = tagModeloNorm;
+      razon = 'usuario solo muestra → modelo no-oral';
+    } else {
+      elegido = tagInferido && !/chup/i.test(tagInferido) ? tagInferido : 'hablando';
+      razon = 'usuario solo muestra → fallback sin oral';
+    }
+  } else if (hayAccion) {
     if (pidePunta || pideMitad || pideTodo) {
       elegido = tagInferido !== 'hablando' ? tagInferido : tagModeloNorm;
-      razon = 'nivel oral explícito en texto → inferido';
+      razon = 'nivel oral del USUARIO → inferido';
     } else if (tagModeloNorm && tagModeloNorm !== 'hablando') {
       elegido = tagModeloNorm;
       razon = 'modelo específico válido';
     } else if (tagInferido && tagInferido !== 'hablando') {
       elegido = tagInferido;
-      razon = 'modelo=hablando, inferido por acción';
+      razon = 'inferido por acción';
     } else {
       elegido = tagModeloNorm || tagInferido || 'hablando';
       razon = 'fallback';
     }
   } else {
-    if (tagModeloNorm && tagModeloNorm !== 'hablando') {
-      elegido = tagModeloNorm;
-      razon = 'sin acción, modelo';
-    } else {
-      elegido = tagInferido || 'hablando';
-      razon = 'sin acción, default';
-    }
+    elegido = (tagModeloNorm && tagModeloNorm !== 'hablando') ? tagModeloNorm : (tagInferido || 'hablando');
+    razon = 'sin acción clara';
   }
 
   elegido = normalizarTag(chica, elegido, soloNoSex);
@@ -389,37 +403,34 @@ export async function enviarMensaje(mensajeUsuario) {
       .filter((c) => c !== estado.chica)
       .map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`)
       .join('\n\n');
-    system += `\n\nOTROS PERSONAJES PRESENTES (pueden hablar en bloques [Nombre]: ):\n${extras}\n\nSi hablan varios, usá el formato:\n[Ichika]: ...\n[Nino]: ...\n[Aldo]: ...\nCada uno reacciona al otro y al usuario. imagen_tag es de la chica PRINCIPAL (${estado.chica}). Si hay acción sexual/física, imagen_tag DEBE describir esa acción, nunca "hablando".`;
+    system += `\n\nOTROS PERSONAJES PRESENTES (pueden hablar en bloques [Nombre]: ):\n${extras}\n\nFormato [Nombre]: ... imagen_tag de la chica PRINCIPAL (${estado.chica}).`;
+  }
+
+  // Refuerzo si solo muestra
+  if (/muestro|te muestro|le muestro|saco (la )?(pija|verga)|mir[ae] mi (pija|verga)/i.test(mensajeUsuario) &&
+      !/chup|mam[ao]|foll|met[eo]/i.test(mensajeUsuario)) {
+    system +=\n\n'IMPORTANTE ESTE TURNO: El usuario SOLO mostró/sacó la pija. Reaccioná (mirás, te calentás, comentás). NO chupes ni empieces sexo oral. imagen_tag: Viendo_Verga o hablando.';
   }
 
   logGroup('Request', {
     chica: estado.chica,
     fase: estado.fase,
-    ubicacion: estado.ubicacion,
     activas: estado.chicasActivas.join(', '),
     escenaSex,
     soloNoSex,
-    tagsDisponibles: tags.slice(0, 12).join(', ') + (tags.length > 12 ? '...' : ''),
     mensajeUsuario
   });
 
   const messages = [
     { role: 'system', content: system },
-    ...estado.historial.slice(-MAX_HISTORIAL).map((h) => ({
-      role: h.role,
-      content: h.content
-    })),
+    ...estado.historial.slice(-MAX_HISTORIAL).map((h) => ({ role: h.role, content: h.content })),
     { role: 'user', content: mensajeUsuario }
   ];
 
   let raw = await llamarGroq(messages);
   let parsed = parseJsonRespuesta(raw);
 
-  logGroup('Raw API', {
-    rawLength: (raw || '').length,
-    rawPreview: (raw || '').slice(0, 300),
-    parseOk: !!parsed
-  });
+  logGroup('Raw API', { rawLength: (raw || '').length, parseOk: !!parsed, preview: (raw || '').slice(0, 250) });
 
   if (!parsed) {
     for (const extra of PROMPTS_REINTENTO) {
@@ -428,11 +439,7 @@ export async function enviarMensaje(mensajeUsuario) {
         ...estado.historial.slice(-8).map((h) => ({ role: h.role, content: h.content })),
         { role: 'user', content: mensajeUsuario },
         { role: 'assistant', content: raw || '' },
-        {
-          role: 'user',
-          content:
-            'Corrige y responde SOLO el JSON. Usuario=HOMBRE. imagen_tag de la lista y que describa la ACCIÓN del mensaje (no "hablando" si hay acción). Hablá natural.'
-        }
+        { role: 'user', content: 'Corrige SOLO JSON. Si solo mostró la pija, no uses chupando_*.' }
       ]);
       parsed = parseJsonRespuesta(raw);
       if (parsed) break;
@@ -444,40 +451,29 @@ export async function enviarMensaje(mensajeUsuario) {
       respuesta: `*te miro y suelto una risita* Ay ${estado.nombreUsuario}... se me fue. Decime de nuevo.`,
       imagen_tag: 'hablando'
     };
-    log('Fallback: no se pudo parsear JSON');
   }
 
   postProcesarFase(parsed.respuesta);
   extraerHechos(mensajeUsuario, parsed.respuesta);
 
-  if (estado.fase !== FASE.INTIMO && PATRON_SEXO.test(parsed.respuesta)) {
-    if (estado.fase === FASE.LLEGADA || PATRON_SEXO.test(mensajeUsuario)) {
-      estado.fase = FASE.INTIMO;
-    }
+  // No subir a INTIMO solo porque el bot inventó oral; sí si el usuario pidió acto
+  if (estado.fase !== FASE.INTIMO && /chup|foll|met[eo]|cog|mam[ao]/i.test(mensajeUsuario)) {
+    estado.fase = FASE.INTIMO;
   }
 
   const bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
-
   for (const b of bloques) {
     if (b.chica && !estado.chicasActivas.includes(b.chica) && existePersonaje(b.chica)) {
       estado.chicasActivas.push(b.chica);
     }
   }
 
-  const ahoraEscenaSex = esEscenaSex() || PATRON_SEXO.test(parsed.respuesta) || PATRON_SEXO.test(mensajeUsuario);
+  const ahoraEscenaSex = esEscenaSex() || /chup|foll|met[eo]|cog|mam[ao]/i.test(mensajeUsuario);
   const ahoraSoloNoSex = !ahoraEscenaSex;
 
   const partes = bloques.map((b) => {
     if (b.chica === 'Aldo') {
-      log('Bloque Aldo (sin imagen)', b.texto.slice(0, 80));
-      return {
-        chica: 'Aldo',
-        texto: b.texto,
-        imagenUrl: '',
-        audioUrl: '',
-        descripcionImg: '',
-        imagen_tag: ''
-      };
+      return { chica: 'Aldo', texto: b.texto, imagenUrl: '', audioUrl: '', descripcionImg: '', imagen_tag: '' };
     }
 
     const { elegido, tagModeloNorm, tagInferido, hayAccion, razon } = elegirTag(
@@ -500,9 +496,7 @@ export async function enviarMensaje(mensajeUsuario) {
       tagFinal: media.tag,
       soloNoSex: ahoraSoloNoSex,
       esSex: esTagSex(media.tag),
-      imagenUrl: media.url ? media.url.slice(0, 70) + '...' : '(vacío)',
-      audio: media.audio ? 'sí' : 'no',
-      textoPreview: b.texto.slice(0, 120)
+      textoPreview: b.texto.slice(0, 100)
     });
 
     return {
@@ -523,7 +517,6 @@ export async function enviarMensaje(mensajeUsuario) {
 
   logGroup('Respuesta final', {
     fase: estado.fase,
-    activas: estado.chicasActivas.join(', '),
     partes: partes.map((p) => `${p.chica}: tag=${p.imagen_tag}`).join(' | ')
   });
 
