@@ -4,23 +4,12 @@
 
 import { armarSystemPrompt, PROMPTS_REINTENTO } from './systemPrompt.js';
 import {
-  getPersonalidad,
-  getChicasDisponibles,
-  existeChica,
-  existePersonaje
+  getPersonalidad, getChicasDisponibles, existeChica, existePersonaje
 } from '../characters/personalidades.js';
 import {
-  resolverImagen,
-  getImagenSelector,
-  getDescripcionChica,
-  listarTags,
-  listarTagsNoSex,
-  normalizarTag,
-  esTagSex,
-  inferirTagFuerte,
-  ensureImagenesLoaded,
-  listarDescripcionesTags,
-  getTagDescripcion
+  resolverImagen, getImagenSelector, getDescripcionChica, listarTags,
+  listarTagsNoSex, normalizarTag, esTagSex, inferirTagFuerte, ensureImagenesLoaded,
+  listarDescripcionesTags, getTagDescripcion
 } from '../systems/imagenes.js';
 import { getHistoria, rellenarNombre } from '../stories/historias.js';
 import { getLore } from '../world/lore.js';
@@ -41,7 +30,7 @@ const PATRON_LUGAR_PRIVADO = /\b(hotel|motel|habitaci[oó]n|casa|departamento|de
 const PATRON_CONFIRMACION = /\b(s[ií]|claro|vamos|dale|quiero|contin[uú]a|continuar|foll|chup|besame|t[oó]came|hazlo|hacelo|por favor|ya)\b/i;
 const PATRON_NEGACION = /\b(no|para|espera|despacio|mejor no|ahora no)\b/i;
 const PATRON_SEXO = /\b(foll|chup|mamad|mam[ao]|lam[ei]|lamiendo|lamer|deepthroat|te la meto|métela|cog[eé]|por el culo|en el culo|follando|penetra|en (tu|la) boca|hasta el fondo|toda la (pija|verga|polla)|handjob|paja|corr[ei]|semen|69|doggy|misioner|cowgirl|chupame|mamame|chupamela|mamamela|lame(me|la)?)\b/i;
-const PATRON_ACCION = /chup|mam[ao]|lam[ei]|lamiendo|lamer|foll|cog|beso|besarte|desnud|teta|pecho|dedo|paja|handjob|nalg|doggy|mision|cowgirl|anal|69|corr|semen|agarra|mont[aá]|de pie|ventana|sujetador|lencer|pene|verga|pija|polla|concha|culo|ano|met[eo]|penetr/i;
+const PATRON_ACCION = /chup|mam[ao]|lam[ei]|lamiendo|lamer|foll|cog|beso|besarte|desnud|teta|pecho|dedo|paja|handjob|nalg|doggy|mision|cowgirl|anal|69|corr|semen|agarra|mont[aá]|de pie|ventana|sujetador|lencer|pene|verga|pija|polla|concha|culo|ano|met[eo]|penetr|aire/i;
 const PATRON_ORAL = /\b(chup|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|chupamela|mamamela|lame(me|la)?|en (tu|la|mi) boca|deepthroat|oral|blowjob)\b/i;
 const SINONIMOS_VERGA = /\b(polla|pija|poronga|pichula|pito|rabo|pinga|pene|verga)\b/gi;
 
@@ -149,7 +138,7 @@ function construirContexto(mensajeUsuarioActual = '') {
   }
   if (estado.hechos.length) lineas.push('Hechos: ' + estado.hechos.slice(-8).join(' | '));
   if (estado.outfitActual && estado.outfitActual.descripcion) {
-    lineas.push('OUTFIT ACTUAL (' + (estado.outfitActual.chica || '') + '): ' + estado.outfitActual.descripcion + ' — Respetá esta ropa. NO inventes otro color.');
+    lineas.push('OUTFIT ACTUAL (' + (estado.outfitActual.chica || '') + '): ' + estado.outfitActual.descripcion + ' — Respetá esta ropa.');
   }
   return lineas.join('\n');
 }
@@ -219,35 +208,46 @@ function partirBloquesMulti(texto, chicaDefault) {
   return bloques.length ? bloques : [{ chica: chicaDefault, texto: texto.trim() }];
 }
 
+/** Extrae la acción pedida para UNA chica (ej. "en el aire a nino"). */
 function extractAccionParaChica(mensaje, chica) {
   const raw = String(mensaje || '');
   const t = raw.toLowerCase();
   const nombre = String(chica || '').toLowerCase();
   if (!nombre) return '';
-  const aliases = { ichika: ['ichika', 'ichi'], nino: ['nino'], miku: ['miku'], yotsuba: ['yotsuba', 'yots'], itsuki: ['itsuki'], emilia: ['emilia'] };
+  const aliases = {
+    ichika: ['ichika', 'ichi'], nino: ['nino'], miku: ['miku'],
+    yotsuba: ['yotsuba', 'yots'], itsuki: ['itsuki'], emilia: ['emilia']
+  };
   const keys = aliases[nombre] || [nombre];
-  const partes = [];
+  const named = keys.some((k) => t.includes(k));
+  const grupal = /las\s*2|ambas|las dos|a las dos|a las 2|todas/.test(t);
+
   for (const k of keys) {
-    const patterns = [
-      new RegExp('(?:a|con|y)\\s+' + k + '\\s+([^,.!?;\\n]+)', 'i'),
-      new RegExp(k + '\\s+(?:me\\s+)?([^,.!?;\\n]+)', 'i'),
-      new RegExp('(?:follo|follar|chupa|chupan|lame)\\s+(?:a\\s+)?' + k + '\\s+([^,.!?;\\n]*)', 'i')
-    ];
-    for (const rx of patterns) {
-      const m = raw.match(rx);
-      if (m) partes.push((m[0] || '').trim());
-    }
+    if (new RegExp('en el aire\\s+a\\s+' + k + '|a\\s+' + k + '\\s+en el aire|follo\\s+en el aire\\s+a\\s+' + k, 'i').test(raw))
+      return 'follando en el aire';
+    if (new RegExp('(?:doggy|a cuatro|perrito)\\s+a\\s+' + k + '|a\\s+' + k + '\\s+(?:doggy|a cuatro|perrito)', 'i').test(raw))
+      return 'doggystyle';
+    if (new RegExp('(?:de costado|de lado|sidefuck)\\s+a\\s+' + k + '|a\\s+' + k + '\\s+(?:de costado|de lado)', 'i').test(raw))
+      return 'sidefuck';
+    if (new RegExp('(?:chup|mam|lam)\\w*\\s+a\\s+' + k + '|' + k + '\\s+me\\s+chup', 'i').test(raw))
+      return 'chupando';
   }
-  const mencionadas = TODAS_CHICAS.filter((c) => t.includes(c.toLowerCase()));
-  if (mencionadas.length === 1 && mencionadas[0].toLowerCase() === nombre) return raw;
-  return partes.join(' ') || '';
+
+  if ((named || grupal) && /en el aire|follando_en_el_aire/.test(t)) return 'follando en el aire';
+  if ((named || grupal) && /doggy|a cuatro|perrito|por detras/.test(t)) return 'doggystyle';
+  if ((named || grupal) && /de costado|de lado|sidefuck/.test(t)) return 'sidefuck';
+  if ((named || grupal) && /misioner/.test(t)) return 'misionero';
+  if ((named || grupal) && /cowgirl|me monto|encima/.test(t)) return 'cowgirl';
+  if ((named || grupal) && /anal|por el culo/.test(t)) return 'follando_anal';
+  if ((named || grupal) && /chup|mam[ao]|lam[ei]/.test(t)) return 'chupando';
+  return '';
 }
 function usuarioSeDirigeA(mensaje, chica) {
   const t = String(mensaje || '').toLowerCase();
   const nombre = String(chica || '').toLowerCase();
   if (!nombre) return false;
   if (t.includes(nombre)) return true;
-  if (nombre === 'ichika' && /\\bichi\\b/.test(t)) return true;
+  if (nombre === 'ichika' && /\bichi\b/.test(t)) return true;
   return false;
 }
 
@@ -321,7 +321,7 @@ export async function enviarMensaje(mensajeUsuario) {
   if (dirigidas.length === 1 && dirigidas[0] !== estado.chica) {
     system += `\n\n⚠️ El usuario se dirige a ${dirigidas[0]}. Debe responder principalmente [${dirigidas[0]}]: ... ${estado.chica} NO se apropia del turno.`;
   } else if (dirigidas.length > 1 || estado.chicasActivas.length > 1) {
-    system += '\n\n⚠️ MULTI: Si pide cosas DISTINTAS a cada chica, cada bloque [Nombre]: describe SOLO su acción/pose. No copien la pose de otra.';
+    system += '\n\n⚠️ MULTI: Si pide cosas DISTINTAS a cada chica, cada bloque [Nombre]: describe SOLO su acción/pose.';
   }
   logGroup('Request', { chica: estado.chica, fase: estado.fase, escenaSex, soloNoSex, mensajeUsuario, dirigidas });
   const messages = [{ role: 'system', content: system }, ...estado.historial.slice(-MAX_HISTORIAL).map((h) => ({ role: h.role, content: h.content })), { role: 'user', content: mensajeUsuario }];
@@ -352,19 +352,19 @@ export async function enviarMensaje(mensajeUsuario) {
   const partes = bloques.map((b) => {
     if (b.chica === 'Aldo') return { chica: 'Aldo', texto: b.texto, imagenUrl: '', audioUrl: '', descripcionImg: '', imagen_tag: '' };
     const accionSu = extractAccionParaChica(mensajeUsuario, b.chica);
-    const mensajeParaTag = accionSu || (esMulti ? b.texto : mensajeUsuario);
+    const mensajeParaTag = accionSu || (esMulti ? `${b.texto} ${mensajeUsuario}` : mensajeUsuario);
     const tagModeloParaElla = esMulti ? '' : (parsed.imagen_tag || '');
-    const { elegido, tagInferido, razon } = elegirTag(b.chica, tagModeloParaElla, b.texto, mensajeParaTag, ahoraSoloNoSex);
+    const { elegido, razon } = elegirTag(b.chica, tagModeloParaElla, b.texto, mensajeParaTag, ahoraSoloNoSex);
     let tagFinalElegido = elegido;
     if (accionSu) {
       const tagAccion = inferirTagFuerte(b.chica, b.texto, accionSu, ahoraSoloNoSex);
       if (tagAccion && tagAccion !== 'hablando') tagFinalElegido = normalizarTag(b.chica, tagAccion, ahoraSoloNoSex);
     } else if (esMulti) {
-      const tagBloque = inferirTagFuerte(b.chica, b.texto, '', ahoraSoloNoSex);
+      const tagBloque = inferirTagFuerte(b.chica, b.texto, mensajeUsuario, ahoraSoloNoSex);
       if (tagBloque && tagBloque !== 'hablando') tagFinalElegido = normalizarTag(b.chica, tagBloque, ahoraSoloNoSex);
     }
     const media = resolverImagen(b.chica, tagFinalElegido, ahoraSoloNoSex);
-    logGroup(`Tag → ${b.chica}`, { esMulti, accionSu: accionSu || '(ninguna)', razon, tagElegido: tagFinalElegido, tagFinal: media.tag, descripcion: media.descripcion || '(sin desc)' });
+    logGroup(`Tag → ${b.chica}`, { esMulti, accionSu: accionSu || '(ninguna)', razon, tagElegido: tagFinalElegido, tagFinal: media.tag });
     return { chica: b.chica, texto: b.texto, imagenUrl: media.url, audioUrl: media.audio || '', descripcionImg: media.descripcion || '', imagen_tag: media.tag || tagFinalElegido };
   });
   const parteConDesc = partes.find((p) => p.descripcionImg && p.descripcionImg.trim());
