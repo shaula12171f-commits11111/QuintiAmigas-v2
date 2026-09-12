@@ -11,6 +11,7 @@ let _loadPromise = null;
 const PATRON_NO_SEX =
   /^(hablando|ropa_|desnuda$|desnuda_en_cama|besando$|mostrando_sujetador|quitandose_la_ropa|selfie_|.*_NOSEX$|moviendo_el_culo$)/i;
 
+// agarra_el_culo SIN _NOSEX cuenta como sex-ish; con _NOSEX no
 const PATRON_SEX =
   /chup|oral|pene|verga|pija|doggy|mision|anal|cowgirl|handjob|paja|69|foll|cum|corro|semen|dedo|squirt|lamiendo|nalg|standfuck|sidefuck|mattin|estir|ano|concha|tetas?_de|agarra_el_culo(?!_.*NOSEX)|rozo_mi|post_sexo|usuario_chupa|metiendo_dedos/i;
 
@@ -82,8 +83,20 @@ export function listarTagsNoSex(chica) {
   return listarTags(chica).filter((t) => !esTagSex(t));
 }
 
-/** Busca el primer tag de la lista que contenga alguna de las claves */
-function buscarTag(tags, claves) {
+/**
+ * Busca tag por claves.
+ * Si preferNoSex=true, prioriza tags que terminen en _NOSEX.
+ */
+function buscarTag(tags, claves, preferNoSex = false) {
+  if (preferNoSex) {
+    for (const clave of claves) {
+      const c = clave.toLowerCase();
+      const hitNoSex = tags.find(
+        (k) => k.toLowerCase().includes(c) && /_NOSEX$/i.test(k)
+      );
+      if (hitNoSex) return hitNoSex;
+    }
+  }
   for (const clave of claves) {
     const c = clave.toLowerCase();
     const hit = tags.find((k) => k.toLowerCase().includes(c));
@@ -93,9 +106,8 @@ function buscarTag(tags, claves) {
 }
 
 /**
- * Inferencia: reglas de más ESPECÍFICAS a más genéricas.
- * punta/mitad van ANTES que "todo" / deepthroat.
- * "garganta" sola NO cuenta como deepthroat.
+ * Inferencia: reglas de más específicas a más genéricas.
+ * En modo soloNoSex prioriza tags *_NOSEX (ej. agarrar culo sin sexo).
  */
 export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex = false) {
   let tags = listarTags(chica);
@@ -111,7 +123,7 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
     .replace(/\p{M}/gu, '');
 
   const reglas = [
-    // --- ORAL: primero los niveles específicos ---
+    // --- ORAL ---
     {
       rx: /solo la punta|la punta del|chupa.*(punta|cabeza)|cabeza del pene|cabeza de la pija|punta de (tu|su|la)/,
       claves: ['chupando_solo_la_punta', 'punta']
@@ -120,7 +132,6 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
       rx: /hasta la mitad|la mitad de|chupa.*(mitad)|mitad de (tu|su|la) (polla|pija|verga|pene)|recorre la mitad/,
       claves: ['chupando_solo_la_mitad', 'mitad']
     },
-    // deepthroat SOLO con señales fuertes (NO "garganta" sola)
     {
       rx: /deepthroat|hasta el fondo|se la traga entera|chupando_todo|toda la (pija|verga|polla|pene)|entera en (la|su) boca/,
       claves: ['chupando_todo_el_pene', 'chupando_todo', 'deep']
@@ -130,7 +141,6 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
       claves: ['chupando_bolas', 'bolas', 'chupando_bola']
     },
     { rx: /\b69\b/, claves: ['69'] },
-    // oral genérico → preferir "todo" solo si existe; si no, cualquier chup
     {
       rx: /chup|mam[ao]|oral|blowjob|en (tu|la|mi) boca|lamiendo.*(pene|verga|pija|polla)|te la chupo|me la chupa/,
       claves: ['chupando_solo_la_mitad', 'chupando_todo_el_pene', 'chupando', 'lamiendo_pene', 'oral', '69']
@@ -159,10 +169,19 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
     { rx: /mostrando_tetas|ensena.*(teta|pecho)|saca las tetas/, claves: ['mostrando_tetas', 'teta'] },
     { rx: /sujetador/, claves: ['mostrando_sujetador', 'sujetador'] },
 
-    // --- CULO / NALGAS ---
-    { rx: /nalguea|cachetada.*(culo|nalga)|azote|te pego en el culo/, claves: ['nalg', 'usuario_nalguea'] },
-    { rx: /agarra.*(culo|nalga)|te agarro el culo/, claves: ['agarra_el_culo', 'culo'] },
-    { rx: /ensenando_ano|estira.*(ano|culo)|abriendo.*(ano|culo)|me abre el culo/, claves: ['ano', 'estir', 'ensenando_ano'] },
+    // --- CULO / NALGAS (importante: NOSEX primero si soloNoSex) ---
+    {
+      rx: /nalguea|cachetada.*(culo|nalga)|azote|te pego en el culo/,
+      claves: ['usuario_nalguea_el_culo', 'nalg', 'usuario_nalguea']
+    },
+    {
+      rx: /agarra.*(culo|nalga)|te agarro el culo|le agarro el culo|agarro el culo/,
+      claves: ['usuario_agarra_el_culo', 'agarra_el_culo', 'culo']
+    },
+    {
+      rx: /ensenando_ano|estira.*(ano|culo)|abriendo.*(ano|culo)|me abre el culo/,
+      claves: ['ano', 'estir', 'ensenando_ano']
+    },
 
     // --- BESOS / DESNUDEZ ---
     { rx: /besando_desnuda|beso.*desnud/, claves: ['besando_desnuda'] },
@@ -193,7 +212,7 @@ export function inferirTagFuerte(chica, textoBot, textoUsuario = '', soloNoSex =
 
   for (const { rx, claves } of reglas) {
     if (!rx.test(t)) continue;
-    const hit = buscarTag(tags, claves);
+    const hit = buscarTag(tags, claves, soloNoSex);
     if (hit) return hit;
   }
 
@@ -211,6 +230,17 @@ export function normalizarTag(chica, tag, soloNoSex = false) {
 
   const t = String(tag).trim();
   if (tags.includes(t)) return t;
+
+  // Si piden un tag sex pero estamos en no-sex, intentar versión NOSEX
+  if (soloNoSex) {
+    const nosexVariant = tags.find(
+      (k) =>
+        /_NOSEX$/i.test(k) &&
+        (k.toLowerCase().includes(t.toLowerCase().replace(/_nosex$/i, '')) ||
+          t.toLowerCase().includes(k.toLowerCase().replace(/_nosex$/i, '')))
+    );
+    if (nosexVariant) return nosexVariant;
+  }
 
   const lower = t.toLowerCase();
   const exact = tags.find((k) => k.toLowerCase() === lower);
@@ -233,7 +263,14 @@ export function resolverImagen(chica, tag = 'hablando', soloNoSex = false) {
 
   let tagPedido = tag || 'hablando';
   if (soloNoSex && esTagSex(tagPedido)) {
-    tagPedido = 'hablando';
+    // intentar encontrar variante NOSEX antes de caer a hablando
+    const all = listarTags(chica);
+    const nosex = all.find(
+      (k) =>
+        /_NOSEX$/i.test(k) &&
+        k.toLowerCase().includes(String(tagPedido).toLowerCase().replace(/_nosex$/i, '').slice(0, 12))
+    );
+    tagPedido = nosex || 'hablando';
   }
 
   const tagOk = normalizarTag(chica, tagPedido, soloNoSex);
