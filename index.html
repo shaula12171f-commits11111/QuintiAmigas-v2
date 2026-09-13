@@ -140,6 +140,42 @@
       z-index: 0;
     }
     body.has-lugar-bg .screen { position: relative; z-index: 1; }
+
+    /* ===== Memorias ===== */
+    .mem-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+      z-index: 1000; align-items: center; justify-content: center; padding: 16px;
+    }
+    .mem-overlay.open { display: flex; }
+    .mem-panel {
+      background: var(--card); border: 2px solid var(--line); border-radius: 20px;
+      width: min(720px, 100%); max-height: 85vh; overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .mem-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 20px; border-bottom: 1px solid var(--line-dim);
+    }
+    .mem-header h2 { color: var(--accent); margin: 0; font-size: 1.3rem; }
+    .mem-body { overflow-y: auto; padding: 16px 20px; flex: 1; }
+    .mem-chica-section { margin-bottom: 24px; }
+    .mem-chica-section h3 {
+      color: var(--gold); font-size: 1.05rem; margin-bottom: 10px;
+      border-bottom: 1px solid var(--line-dim); padding-bottom: 6px;
+    }
+    .mem-item {
+      background: #12122a; border: 1px solid var(--line-dim); border-radius: 12px;
+      padding: 12px 14px; margin-bottom: 8px; display: flex; justify-content: space-between;
+      align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .mem-item .info { flex: 1; min-width: 160px; }
+    .mem-item .info strong { display: block; color: var(--text); }
+    .mem-item .info small { color: var(--muted); font-size: 0.78rem; }
+    .mem-item .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .mem-empty { color: var(--muted); font-size: 0.9rem; padding: 8px 0; }
+    .btn.danger { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+    .btn.mem-save { background: linear-gradient(135deg, #059669, #10b981); }
+
   </style>
 </head>
 <body>
@@ -184,6 +220,8 @@
           <div class="meta" id="chat-meta">fase: normal</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn sm mem-save" id="btn-guardar-mem" title="Guardar chat actual en Memorias">💾 Guardar</button>
+          <button class="btn sm ghost" id="btn-memorias" title="Ver chats guardados">📚 Memorias</button>
           <button class="btn sm ghost" id="btn-refresh" title="Regenerar última respuesta">↻ Refresh</button>
           <button class="btn sm ghost" id="btn-reset">Reset</button>
           <button class="btn sm ghost" id="btn-salir-chat">Cambiar chica</button>
@@ -209,7 +247,9 @@
       resetChat,
       volverAlSelector,
       getEstado,
-      getChicasDisponibles
+      getChicasDisponibles,
+      exportarEstadoCompleto,
+      restaurarEstadoCompleto
     } from './src/core/logica.js';
     import { ensureImagenesLoaded, getImagenSelector, getDescripcionChica } from './src/systems/imagenes.js';
     import { getHistorias } from './src/stories/historias.js';
@@ -582,7 +622,226 @@
       console.log('Últimos votos:', (d.items || []).slice(-10));
       return d;
     };
+
+    // ===================== MEMORIAS (localStorage) =====================
+    const MEM_KEY = 'quinti_memorias_v1';
+
+    function loadAllMemorias() {
+      try {
+        return JSON.parse(localStorage.getItem(MEM_KEY) || '{}');
+      } catch {
+        return {};
+      }
+    }
+
+    function saveAllMemorias(data) {
+      try {
+        localStorage.setItem(MEM_KEY, JSON.stringify(data));
+      } catch (e) {
+        console.error('[Memorias] Error al guardar', e);
+        alert('No se pudo guardar (¿espacio lleno?)');
+      }
+    }
+
+    /** Guarda el chat actual (manual) */
+    function guardarMemoriaActual() {
+      const st = getEstado();
+      if (!st.chica) {
+        alert('No hay chat activo para guardar.');
+        return;
+      }
+
+      // Capturar mensajes visuales actuales (con imágenes)
+      const msgsVisuales = [];
+      $('msgs').querySelectorAll('.msg').forEach((el) => {
+        if (el.classList.contains('user')) {
+          msgsVisuales.push({ role: 'user', texto: el.textContent });
+        } else if (el.classList.contains('bot')) {
+          const who = el.querySelector('.who-tag')?.textContent || st.chica;
+          const body = el.querySelector('div:not(.who-tag):not(.cap):not(.feedback)')?.innerText || '';
+          const img = el.querySelector('img.scene')?.src || '';
+          const cap = el.querySelector('.cap')?.textContent || '';
+          const tag = el.querySelector('img.scene')?.alt || '';
+          msgsVisuales.push({
+            role: 'assistant',
+            chica: who,
+            texto: body,
+            imagenUrl: img,
+            descripcionImg: cap,
+            imagen_tag: tag
+          });
+        }
+      });
+
+      if (msgsVisuales.length === 0) {
+        alert('No hay mensajes para guardar todavía.');
+        return;
+      }
+
+      const snap = exportarEstadoCompleto();
+      const id = 'mem_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      const fecha = new Date();
+      const nombreDefault = `${st.chica} · ${fecha.toLocaleDateString('es')} ${fecha.toLocaleTimeString('es', {hour:'2-digit', minute:'2-digit'})}`;
+
+      const memoria = {
+        id,
+        nombre: nombreDefault,
+        fecha: Date.now(),
+        chica: st.chica,
+        estado: snap,
+        mensajesVisuales: msgsVisuales
+      };
+
+      const all = loadAllMemorias();
+      if (!all[st.chica]) all[st.chica] = [];
+      all[st.chica].unshift(memoria); // más reciente primero
+      // límite por chica
+      if (all[st.chica].length > 30) all[st.chica] = all[st.chica].slice(0, 30);
+      saveAllMemorias(all);
+
+      console.log('%c[Memorias] Guardado', 'color:#10b981;font-weight:bold', memoria.nombre, '| msgs:', msgsVisuales.length);
+      alert('💾 Memoria guardada: ' + memoria.nombre);
+    }
+
+    function eliminarMemoria(chica, id) {
+      if (!confirm('¿Eliminar esta memoria?')) return;
+      const all = loadAllMemorias();
+      if (all[chica]) {
+        all[chica] = all[chica].filter(m => m.id !== id);
+        if (all[chica].length === 0) delete all[chica];
+        saveAllMemorias(all);
+        renderMemoriasPanel();
+      }
+    }
+
+    function cargarMemoria(chica, id) {
+      const all = loadAllMemorias();
+      const lista = all[chica] || [];
+      const mem = lista.find(m => m.id === id);
+      if (!mem) {
+        alert('Memoria no encontrada');
+        return;
+      }
+
+      stopAllAudio();
+      // Restaurar estado interno completo
+      restaurarEstadoCompleto(mem.estado);
+
+      // Limpiar y re-renderizar mensajes visuales
+      $('msgs').innerHTML = '';
+      chicaActual = mem.chica;
+
+      for (const m of (mem.mensajesVisuales || [])) {
+        if (m.role === 'user') {
+          addUser(m.texto);
+        } else {
+          addBotPart({
+            chica: m.chica || mem.chica,
+            texto: m.texto,
+            imagenUrl: m.imagenUrl || '',
+            audioUrl: '',
+            descripcionImg: m.descripcionImg || '',
+            imagen_tag: m.imagen_tag || ''
+          });
+        }
+      }
+
+      const st = getEstado();
+      $('chat-who').textContent = (st.chicasActivas || [st.chica]).join(', ');
+      actualizarMeta(st);
+      show('screen-chat');
+      cerrarMemorias();
+      $('input').focus();
+
+      console.log('%c[Memorias] Cargada', 'color:#10b981;font-weight:bold', mem.nombre);
+    }
+
+    function renderMemoriasPanel() {
+      const body = $('mem-body');
+      const all = loadAllMemorias();
+      const chicas = getChicasDisponibles();
+
+      let html = '';
+      let tieneAlgo = false;
+
+      for (const chica of chicas) {
+        const lista = all[chica] || [];
+        if (lista.length === 0) continue;
+        tieneAlgo = true;
+        html += `<div class="mem-chica-section"><h3>${chica} (${lista.length})</h3>`;
+        for (const m of lista) {
+          const fechaStr = new Date(m.fecha).toLocaleString('es');
+          const cant = (m.mensajesVisuales || []).length;
+          const rel = m.estado?.relacion || '—';
+          const fase = m.estado?.fase || '—';
+          html += `
+            <div class="mem-item">
+              <div class="info">
+                <strong>${m.nombre}</strong>
+                <small>${fechaStr} · ${cant} msgs · fase: ${fase} · relación: ${rel}</small>
+              </div>
+              <div class="actions">
+                <button class="btn sm" data-cargar="${chica}|${m.id}">Cargar</button>
+                <button class="btn sm danger" data-borrar="${chica}|${m.id}">Borrar</button>
+              </div>
+            </div>`;
+        }
+        html += '</div>';
+      }
+
+      if (!tieneAlgo) {
+        html = '<p class="mem-empty">No hay memorias guardadas todavía.<br>Entrá a un chat y tocá <strong>💾 Guardar</strong>.</p>';
+      }
+
+      body.innerHTML = html;
+
+      // Bind buttons
+      body.querySelectorAll('[data-cargar]').forEach(btn => {
+        btn.onclick = () => {
+          const [chica, id] = btn.getAttribute('data-cargar').split('|');
+          cargarMemoria(chica, id);
+        };
+      });
+      body.querySelectorAll('[data-borrar]').forEach(btn => {
+        btn.onclick = () => {
+          const [chica, id] = btn.getAttribute('data-borrar').split('|');
+          eliminarMemoria(chica, id);
+        };
+      });
+    }
+
+    function abrirMemorias() {
+      renderMemoriasPanel();
+      $('mem-overlay').classList.add('open');
+    }
+
+    function cerrarMemorias() {
+      $('mem-overlay').classList.remove('open');
+    }
+
+    // Eventos
+    $('btn-guardar-mem').onclick = guardarMemoriaActual;
+    $('btn-memorias').onclick = abrirMemorias;
+    $('btn-cerrar-mem').onclick = cerrarMemorias;
+    $('mem-overlay').addEventListener('click', (e) => {
+      if (e.target === $('mem-overlay')) cerrarMemorias();
+    });
+
     console.log('%c[Quinti] Listo. F12 = testing tags. ↻ Refresh regenera respuesta.', 'color:#a78bfa');
   </script>
+
+  <!-- Panel Memorias -->
+  <div class="mem-overlay" id="mem-overlay">
+    <div class="mem-panel">
+      <div class="mem-header">
+        <h2>📚 Memorias</h2>
+        <button class="btn sm ghost" id="btn-cerrar-mem">✕ Cerrar</button>
+      </div>
+      <div class="mem-body" id="mem-body">
+        <p class="mem-empty">Cargando...</p>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>
