@@ -1,6 +1,6 @@
 // ============================================================
 //  tagEngine.js — Sistema de tags estilo Nakardas (port a v2)
-//  Prioridad: usuario > continuidad > respuesta IA > modelo > hablando
+//  Prioridad: tags-reales > usuario-keywords > continuidad > bot > modelo
 // ============================================================
 
 import {
@@ -17,6 +17,49 @@ const PESOS = {
 };
 
 const UMBRAL = 10;
+
+// Tokens genéricos que casi no aportan especificidad (peso bajo)
+const TOKENS_GENERICOS = new Set([
+  'el', 'la', 'los', 'las', 'de', 'del', 'en', 'a', 'al', 'un', 'una',
+  'su', 'mi', 'tu', 'me', 'te', 'le', 'lo', 'se', 'y', 'o', 'con',
+  'todo', 'solo', 'mientras', 'para', 'por', 'que', 'es', 'esta'
+]);
+
+// Sinónimos para tokens de tags (mensaje ↔ nombre de tag)
+const SINONIMOS_TOKEN = {
+  polla: ['polla', 'pija', 'verga', 'pene', 'miembro', 'pito'],
+  pija: ['polla', 'pija', 'verga', 'pene', 'miembro', 'pito'],
+  verga: ['polla', 'pija', 'verga', 'pene', 'miembro', 'pito'],
+  pene: ['polla', 'pija', 'verga', 'pene', 'miembro', 'pito'],
+  chupando: ['chupando', 'chupa', 'chupar', 'chupame', 'mamando', 'mama', 'mamad', 'oral'],
+  chupa: ['chupando', 'chupa', 'chupar', 'chupame', 'mamando', 'mama'],
+  lamiendo: ['lamiendo', 'lame', 'lamer', 'lameme'],
+  jalo: ['jalo', 'jalar', 'jalando', 'tiro', 'tirar', 'tirando', 'agarro', 'agarrar'],
+  jalar: ['jalo', 'jalar', 'jalando', 'tiro', 'tirar', 'tirando'],
+  cabello: ['cabello', 'pelo', 'cabellos', 'pelos', 'coleta', 'coletas', 'trenza'],
+  pelo: ['cabello', 'pelo', 'cabellos', 'pelos', 'coleta', 'coletas'],
+  coleta: ['cabello', 'pelo', 'coleta', 'coletas', 'trenza'],
+  mano: ['mano', 'manos'],
+  cabeza: ['cabeza', 'cabezas'],
+  empujandola: ['empujando', 'empujar', 'empujo', 'empujandola', 'empujandolo'],
+  empujando: ['empujando', 'empujar', 'empujo', 'empujandola'],
+  bolas: ['bolas', 'bola', 'testiculos', 'testicul', 'huevos'],
+  bola: ['bolas', 'bola', 'testiculos', 'testicul', 'huevos'],
+  punta: ['punta', 'cabeza', 'glande'],
+  mitad: ['mitad'],
+  doggystyle: ['doggy', 'doggystyle', 'perrito', 'cuatro'],
+  doggy: ['doggy', 'doggystyle', 'perrito'],
+  misionero: ['misionero', 'misioner'],
+  cowgirl: ['cowgirl', 'montando', 'cabalgando', 'encima'],
+  anal: ['anal', 'ano', 'culo'],
+  nalguea: ['nalguea', 'nalgueo', 'nalgue', 'nalga', 'cachetada', 'azote'],
+  agarra: ['agarra', 'agarro', 'agarrando', 'aprieta', 'aprieto', 'manoseo'],
+  culo: ['culo', 'nalga', 'nalgas', 'trasero'],
+  desnuda: ['desnuda', 'desnudate', 'sin ropa'],
+  besando: ['besando', 'beso', 'besame', 'besar'],
+  handjob: ['handjob', 'paja', 'jalo'],
+  paja: ['handjob', 'paja']
+};
 
 const PATRONES_ASTERISCO = [
   { re: /\*[^*]*(?:bes[aoé]|besando|besar|kiss)[^*]*\*/gi, tag: 'besando', peso: PESOS.VERBO },
@@ -38,7 +81,6 @@ const PATRONES_ASTERISCO = [
   { re: /\*[^*]*(?:en el aire|levantad)[^*]*\*/gi, tag: 'follando_en_el_aire', peso: PESOS.POSE },
   { re: /\*[^*]*(?:anal|por el culo|en el ano)[^*]*\*/gi, tag: 'follando_anal', peso: PESOS.POSE },
   { re: /\*[^*]*(?:handjob|paja|con la mano|jal[ao])[^*]*\*/gi, tag: 'handjob_paja', peso: PESOS.VERBO },
-  // === CUM / FACIAL (prioridad cara > boca) estilo Nakardas ===
   { re: /\*[^*]*(?:me\s*corro|eyacul|corrida|semen|leche|esperma|cum)[^*]*(?:cara|rostro|facial|face)[^*]*\*/gi, tag: 'me_corro_en_su_cara', peso: PESOS.VERBO + 6 },
   { re: /\*[^*]*(?:cara|rostro|facial|face)[^*]*(?:me\s*corro|eyacul|corrida|semen|leche|esperma|cum)[^*]*\*/gi, tag: 'me_corro_en_su_cara', peso: PESOS.VERBO + 6 },
   { re: /\*[^*]*(?:me\s*corro|eyacul|corrida|semen|leche|esperma|cum)[^*]*(?:boca|labios|garganta|trag)[^*]*\*/gi, tag: 'me_corro_en_su_boca', peso: PESOS.VERBO + 4 },
@@ -75,14 +117,12 @@ const PALABRAS_CLAVE = [
   { palabras: ['te muestro', 'muestro mi', 'saco la pija', 'saco la verga', 'mira mi verga', 'mira mi pija'], tag: 'usuario_muestra_su_verga', peso: PESOS.VERBO },
   { palabras: ['agarra el culo', 'agarrame el culo', 'aprieta el culo', 'le agarro el culo', 'le agarra el culo', 'agarro el culo', 'agarrando el culo', 'le aprieto el culo', 'manoseo el culo', 'le manoseo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
   { palabras: ['agarro', 'agarrando', 'aprieto', 'manoseo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
-  // === NALGUEAR (ampliado: nalgueo, nalgue, nalga, etc.) ===
   { palabras: [
     'nalguea', 'nalgueame', 'nalgueo', 'nalgue', 'nalga', 'nalgas',
     'azote en el culo', 'cachetada en el culo', 'cachetada', 'azote',
     'pego en el culo', 'le doy una nalgada', 'nalgada', 'nalgueándole',
     'le nalgueo', 'te nalgueo', 'la nalgueo', 'lo nalgueo'
   ], tag: 'usuario_nalguea_el_culo', peso: PESOS.VERBO },
-  // === CUM / FACIAL (frases exactas primero) ===
   { palabras: ['me corro en su cara', 'corro en su cara', 'me corro en la cara', 'corrida en la cara', 'corrida en su cara', 'semen en su cara', 'semen en la cara', 'leche en su cara', 'leche en la cara', 'facial', 'cum en su cara', 'cum en la cara', 'acabo en su cara', 'acabo en la cara'], tag: 'me_corro_en_su_cara', peso: PESOS.VERBO + 8 },
   { palabras: ['me corro en su boca', 'corro en su boca', 'me corro en la boca', 'corrida en la boca', 'corrida en su boca', 'semen en su boca', 'semen en la boca', 'leche en su boca', 'leche en la boca', 'cum en su boca', 'acabo en su boca', 'acabo en la boca', 'traga el semen', 'traga la leche'], tag: 'me_corro_en_su_boca', peso: PESOS.VERBO + 6 },
   { palabras: ['verga en su cara', 'pija en su cara', 'polla en su cara', 'pene en su cara', 'choco mi verga en su cara'], tag: 'verga_en_su_cara', peso: PESOS.VERBO + 4 }
@@ -102,11 +142,137 @@ const PATRONES_CAMBIAR = [
   /\bcambiemos\b/i
 ];
 
-// Palabras que indican acción NUEVA (no continuidad ciega)
 const PALABRAS_ACCION_CLARA = /\b(nalgue|nalga|cachetad|azote|pego|agarr|apriet|manose|chup|mam[ao]|lam[ei]|foll|cog|met[eo]|bes[ao]|desnud|muestro|saco|paja|handjob|doggy|mision|cowgirl|anal|corro|semen|cum)\b/i;
 
 function norm(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+}
+
+function tokenizaTag(tag) {
+  return norm(tag).replace(/_/g, ' ').split(/\s+/).filter((t) => t.length > 1 && !TOKENS_GENERICOS.has(t));
+}
+
+function tokenApareceEnMensaje(token, msgNorm) {
+  if (msgNorm.includes(token)) return true;
+  const sins = SINONIMOS_TOKEN[token];
+  if (sins) {
+    for (const s of sins) {
+      if (msgNorm.includes(s)) return true;
+    }
+  }
+  // match parcial suave (token de 4+ chars)
+  if (token.length >= 4) {
+    const re = new RegExp('\\b' + token.slice(0, Math.max(4, token.length - 1)));
+    if (re.test(msgNorm)) return true;
+  }
+  return false;
+}
+
+/**
+ * Match inteligente: compara el mensaje del usuario contra los tags REALES
+ * disponibles de la chica. Premia especificidad (más tokens distintivos).
+ *
+ * Casos que resuelve:
+ *  - "chupando_polla_le_jalo_el_cabello"  → match exacto
+ *  - "nino me chupa la polla y yo le jalo el cabello" → match por tokens
+ *  - "mientras chupa mi polla le jalo el cabello" → idem
+ */
+export function matchContraTagsReales(mensaje, tagsDisponibles) {
+  if (!mensaje || !tagsDisponibles?.length) {
+    return { tag: null, puntuacion: 0, detalle: null };
+  }
+
+  const msgNorm = norm(mensaje).replace(/_/g, ' ');
+  const msgCompact = msgNorm.replace(/\s+/g, '');
+
+  let best = null;
+  let bestScore = 0;
+  const candidatos = [];
+
+  for (const tag of tagsDisponibles) {
+    if (tag === 'hablando') continue;
+
+    const tagNorm = norm(tag);
+    const tagSpaces = tagNorm.replace(/_/g, ' ');
+    const tagCompact = tagNorm.replace(/_/g, '');
+
+    // 1) Match exacto del nombre del tag (con o sin guiones bajos)
+    if (msgNorm === tagSpaces || msgCompact === tagCompact || msgNorm.includes(tagSpaces) || msgCompact.includes(tagCompact)) {
+      const score = 100 + tagSpaces.length; // exacto gana siempre
+      candidatos.push({ tag, score, tipo: 'exacto' });
+      if (score > bestScore) {
+        bestScore = score;
+        best = { tag, puntuacion: score, detalle: 'exacto' };
+      }
+      continue;
+    }
+
+    // 2) Scoring por tokens del nombre del tag
+    const tokens = tokenizaTag(tag);
+    if (!tokens.length) continue;
+
+    let hits = 0;
+    let pesoHits = 0;
+    const matched = [];
+
+    for (const tok of tokens) {
+      if (tokenApareceEnMensaje(tok, msgNorm)) {
+        hits++;
+        // Tokens distintivos (largos / no genéricos de acción básica) valen más
+        const esDistintivo = tok.length >= 5 || ['cabello', 'pelo', 'coleta', 'jalo', 'jalar', 'empujando', 'empujandola', 'nalguea', 'agarra'].includes(tok);
+        const w = esDistintivo ? 12 : 5;
+        pesoHits += w;
+        matched.push(tok);
+      }
+    }
+
+    if (hits === 0) continue;
+
+    // Cobertura: % de tokens del tag que aparecen en el mensaje
+    const cobertura = hits / tokens.length;
+
+    // Penalizar tags genéricos cortos cuando el mensaje tiene modificadores extra
+    // (ej. mensaje tiene "cabello" pero el tag genérico no lo tiene)
+    let bonusEspecificidad = 0;
+    if (tokens.length >= 3 && cobertura >= 0.6) {
+      bonusEspecificidad = tokens.length * 4; // premia tags largos/específicos
+    }
+
+    // Score final
+    let score = pesoHits * cobertura * 2 + bonusEspecificidad;
+
+    // Si casi todos los tokens matchean y el tag es específico → boost fuerte
+    if (cobertura >= 0.75 && tokens.length >= 3) {
+      score += 25;
+    }
+    if (cobertura >= 0.9 && tokens.length >= 4) {
+      score += 20;
+    }
+
+    candidatos.push({ tag, score, tipo: 'tokens', hits, cobertura: cobertura.toFixed(2), matched });
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = {
+        tag,
+        puntuacion: score,
+        detalle: `tokens:${matched.join('+')} cov=${cobertura.toFixed(2)}`
+      };
+    }
+  }
+
+  // Umbral mínimo para aceptar match por tokens (exacto siempre pasa)
+  const UMBRAL_TOKENS = 18;
+  if (!best || (best.detalle !== 'exacto' && best.puntuacion < UMBRAL_TOKENS)) {
+    return { tag: null, puntuacion: best?.puntuacion || 0, detalle: null, candidatos: candidatos.sort((a, b) => b.score - a.score).slice(0, 5) };
+  }
+
+  return {
+    tag: best.tag,
+    puntuacion: best.puntuacion,
+    detalle: best.detalle,
+    candidatos: candidatos.sort((a, b) => b.score - a.score).slice(0, 5)
+  };
 }
 
 export function detectarAccionEnTexto(texto, { umbral = UMBRAL } = {}) {
@@ -152,7 +318,6 @@ export function detectarAccionEnTexto(texto, { umbral = UMBRAL } = {}) {
     scores['chupando_todo_el_pene'] = (scores['chupando_todo_el_pene'] || 0) + 5;
   }
 
-  // Cum / facial: cara gana siempre sobre boca si ambas podrían aplicar
   const tieneCum = /me\s*corro|eyacul|corrida|semen|leche|esperma|\bcum\b|acabo|termin[oa]/.test(lower);
   const tieneCara = /\bcara\b|rostro|facial|face/.test(lower);
   const tieneBocaCum = /\bboca\b|labios|garganta|trag/.test(lower);
@@ -184,13 +349,11 @@ export function detectarIntencionContinuidad(mensaje, accionEnCurso = null) {
   for (const p of PATRONES_CONTINUAR) if (p.test(msg)) cont++;
   for (const p of PATRONES_CAMBIAR) if (p.test(msg)) camb++;
 
-  // Mensajes cortos con acción clara = NO continuidad (es una acción nueva)
   if (msg.length < 18 && PALABRAS_ACCION_CLARA.test(msg)) {
     return { intencion: 'cambiar', confianza: 0.7 };
   }
 
   if (cont === 0 && camb === 0) {
-    // Solo continuidad por mensaje corto si NO tiene palabras de acción
     if (accionEnCurso && msg.length < 12 && !PALABRAS_ACCION_CLARA.test(msg)) {
       return { intencion: 'continuar', confianza: 0.35 };
     }
@@ -245,13 +408,24 @@ export function resolverTagEscena({
   tagModelo = '',
   soloNoSex = true,
   accionAnterior = null,
-  intencionUsuario = null   // { label, tagHint[] } desde logica.js
+  intencionUsuario = null
 }) {
   const tags = tagsDe(chica, soloNoSex);
-  const userDet = detectarAccionEnTexto(mensajeUsuario, { umbral: UMBRAL });
   const cont = detectarIntencionContinuidad(mensajeUsuario, accionAnterior);
 
-  // 0. Pista fuerte desde logica.js (resolverIntencionUsuario)
+  // ─── 0. MATCH CONTRA TAGS REALES (prioridad máxima) ───
+  // Resuelve: tag literal, "me chupa la polla y le jalo el cabello", etc.
+  const realMatch = matchContraTagsReales(mensajeUsuario, tags);
+  if (realMatch.tag && realMatch.tag !== 'hablando') {
+    return {
+      tag: realMatch.tag,
+      razon: `tags-reales:${realMatch.detalle}(${Math.round(realMatch.puntuacion)})`,
+      puntuacion: realMatch.puntuacion,
+      fuente: 'tags-reales'
+    };
+  }
+
+  // ─── 1. Pista fuerte desde logica.js ───
   if (intencionUsuario && Array.isArray(intencionUsuario.tagHint) && intencionUsuario.tagHint.length) {
     for (const hint of intencionUsuario.tagHint) {
       let hit = encontrarTagMasPertinente(hint, tags);
@@ -267,7 +441,8 @@ export function resolverTagEscena({
     }
   }
 
-  // 1. Detección directa del texto del usuario
+  // ─── 2. Keywords clásicos ───
+  const userDet = detectarAccionEnTexto(mensajeUsuario, { umbral: UMBRAL });
   if (userDet.tag) {
     let hit = encontrarTagMasPertinente(userDet.tag, tags);
     if (!hit) hit = normalizarTag(chica, userDet.tag, soloNoSex);
@@ -281,7 +456,7 @@ export function resolverTagEscena({
     }
   }
 
-  // 2. Continuidad (solo si realmente quiere continuar y no hay acción nueva)
+  // ─── 3. Continuidad ───
   if (cont.intencion === 'continuar' && accionAnterior && accionAnterior !== 'hablando') {
     const hit = encontrarTagMasPertinente(accionAnterior, tags) ||
       (tags.includes(accionAnterior) ? accionAnterior : null);
@@ -308,7 +483,20 @@ export function resolverTagEscena({
     return { tag: 'hablando', razon: 'sin_accion_usuario→hablando', puntuacion: 0, fuente: 'default' };
   }
 
+  // ─── 4. Texto del bot ───
   if (textoBot && (!soloNoSex || userTieneAlgoSexual || cont.intencion === 'continuar')) {
+    // También intentar match contra tags reales con el texto del bot
+    const botReal = matchContraTagsReales(textoBot, tags);
+    if (botReal.tag && botReal.tag !== 'hablando' && botReal.puntuacion >= 30) {
+      if (!(soloNoSex && esTagSex(botReal.tag) && !/usuario_muestra|viendo_verga|agarra/.test(botReal.tag))) {
+        return {
+          tag: botReal.tag,
+          razon: `bot-tags-reales:${botReal.detalle}`,
+          puntuacion: botReal.puntuacion,
+          fuente: 'bot'
+        };
+      }
+    }
     const botDet = detectarAccionEnTexto(textoBot, { umbral: soloNoSex ? 18 : 12 });
     if (botDet.tag) {
       let hit = encontrarTagMasPertinente(botDet.tag, tags);
@@ -326,6 +514,7 @@ export function resolverTagEscena({
     }
   }
 
+  // ─── 5. Tag del modelo ───
   if (tagModelo && tagModelo !== 'hablando') {
     const hit = encontrarTagMasPertinente(tagModelo, tags) || normalizarTag(chica, tagModelo, soloNoSex);
     if (hit && !(soloNoSex && esTagSex(hit) && !/usuario_muestra|viendo_verga|agarra/.test(hit))) {
@@ -333,6 +522,7 @@ export function resolverTagEscena({
     }
   }
 
+  // ─── 6. Memoria de escena ───
   if (!soloNoSex && accionAnterior && accionAnterior !== 'hablando') {
     const hit = encontrarTagMasPertinente(accionAnterior, tags);
     if (hit) {
