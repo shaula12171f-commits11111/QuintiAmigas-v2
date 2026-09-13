@@ -126,6 +126,20 @@
       background: #0f0f1a; color: #fff; font-size: 1rem; outline: none;
     }
     .hint { text-align: center; color: var(--muted); font-size: 0.75rem; margin-top: 8px; }
+    body.has-lugar-bg {
+      background-size: cover;
+      background-position: center;
+      background-attachment: fixed;
+      transition: background-image 0.6s ease;
+    }
+    body.has-lugar-bg::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: rgba(12,12,20,0.72);
+      pointer-events: none;
+      z-index: 0;
+    }
+    body.has-lugar-bg .screen { position: relative; z-index: 1; }
   </style>
 </head>
 <body>
@@ -170,6 +184,7 @@
           <div class="meta" id="chat-meta">fase: normal</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn sm ghost" id="btn-refresh" title="Regenerar última respuesta">↻ Refresh</button>
           <button class="btn sm ghost" id="btn-reset">Reset</button>
           <button class="btn sm ghost" id="btn-salir-chat">Cambiar chica</button>
         </div>
@@ -179,7 +194,7 @@
         <input id="input" placeholder="Escribí algo..." />
         <button class="btn" id="send">Enviar</button>
       </div>
-      <p class="hint">Mencioná contexto o a otra hermana / Aldo · 👍/👎 bajo cada respuesta · F12 = consola de tags</p>
+      <p class="hint">Mencioná contexto o a otra hermana / Aldo · 👍/👎 · ↻ Refresh regenera · F12 = testing tags</p>
     </div>
   </section>
 
@@ -190,6 +205,7 @@
       iniciarChatLibre,
       iniciarHistoria,
       enviarMensaje,
+      regenerarUltimaRespuesta,
       resetChat,
       volverAlSelector,
       getEstado,
@@ -246,25 +262,45 @@
       });
     }
 
-    /** Reproduce varios audios en secuencia (multi-chica). */
+    function aplicarFondoLugar(fondoUrl) {
+      if (fondoUrl && fondoUrl.trim()) {
+        document.body.style.backgroundImage = `url("${fondoUrl}")`;
+        document.body.classList.add('has-lugar-bg');
+      } else {
+        document.body.style.backgroundImage = '';
+        document.body.classList.remove('has-lugar-bg');
+      }
+    }
+
+    function actualizarMeta(r) {
+      const activas = (r.chicasActivas || [r.chica]).join(', ');
+      const rel = r.relacion || getEstado().relacion || 'desconocida';
+      const ubi = r.ubicacion || getEstado().ubicacion || '—';
+      $('chat-meta').textContent = `${activas} · fase: ${r.fase || 'normal'} · relación: ${rel} · lugar: ${ubi}`;
+      $('chat-who').textContent = activas;
+      if (r.fondoLugar !== undefined) aplicarFondoLugar(r.fondoLugar);
+      else aplicarFondoLugar(getEstado().fondoLugar || '');
+    }
+
+    /** Reproduce varios audios en secuencia (multi-chica). Sin corte forzado a 4s. */
     async function playAudioSequence(audioEls) {
       stopAllAudio();
       for (const au of audioEls) {
         if (!au || !au.src) continue;
         activeAudioEl = au;
         try {
+          au.loop = false;
           au.currentTime = 0;
           await au.play();
-          if (au.loop) {
-            await new Promise((r) => setTimeout(r, 4500));
-            try { au.pause(); } catch (_) {}
-          } else {
-            await new Promise((resolve) => {
-              const done = () => { au.removeEventListener('ended', done); resolve(); };
-              au.addEventListener('ended', done);
-              setTimeout(resolve, 8000);
-            });
-          }
+          await new Promise((resolve) => {
+            const done = () => {
+              au.removeEventListener('ended', done);
+              resolve();
+            };
+            au.addEventListener('ended', done);
+            // fallback largo por si el archivo no dispara ended
+            setTimeout(resolve, 60000);
+          });
         } catch (_) {}
       }
     }
@@ -317,7 +353,7 @@
       if (part.audioUrl) {
         const au = document.createElement('audio');
         au.controls = true;
-        au.loop = true;
+        au.loop = false;
         au.preload = 'auto';
         au.src = part.audioUrl;
         el.appendChild(au);
@@ -423,7 +459,8 @@
       iniciarChatLibre(chicaActual);
       $('msgs').innerHTML = '';
       $('chat-who').textContent = chicaActual;
-      $('chat-meta').textContent = `Chat libre · ${getNombreUsuario()} · fase: normal`;
+      $('chat-meta').textContent = `Chat libre · ${getNombreUsuario()} · fase: normal · relación: desconocida · lugar: —`;
+      aplicarFondoLugar('');
       show('screen-chat');
       $('input').focus();
     };
@@ -442,7 +479,8 @@
       });
       if (au) playAudioSequence([au]);
       $('chat-who').textContent = nombre;
-      $('chat-meta').textContent = `Historia · ${getNombreUsuario()} · fase: ${bien.fase}`;
+      $('chat-meta').textContent = `Historia · ${getNombreUsuario()} · fase: ${bien.fase} · relación: ${bien.relacion || 'conocida'} · lugar: —`;
+      aplicarFondoLugar('');
       show('screen-chat');
       $('input').focus();
     }
@@ -471,9 +509,7 @@
           if (au) audioEls.push(au);
         }
         if (audioEls.length) playAudioSequence(audioEls);
-        const activas = (r.chicasActivas || [r.chica]).join(', ');
-        $('chat-meta').textContent = `${activas} · fase: ${r.fase}`;
-        $('chat-who').textContent = activas;
+        actualizarMeta(r);
       } catch (e) {
         console.error('[Quinti] Error', e);
         addBotPart({ chica: 'Sistema', texto: 'Error: ' + e.message });
@@ -486,17 +522,57 @@
 
     $('send').onclick = send;
     $('input').addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+
+    $('btn-refresh').onclick = async () => {
+      if (busy) return;
+      const st = getEstado();
+      if (!st.ultimoMensajeUsuario) {
+        console.warn('[Quinti] No hay respuesta previa para regenerar');
+        return;
+      }
+      busy = true;
+      $('btn-refresh').disabled = true;
+      $('send').disabled = true;
+      try {
+        const bots = $('msgs').querySelectorAll('.msg.bot');
+        if (bots.length) bots[bots.length - 1].remove();
+        const r = await regenerarUltimaRespuesta();
+        const partes = r.partes || [{
+          chica: r.chica, texto: r.texto, imagenUrl: r.imagenUrl,
+          audioUrl: r.audioUrl, descripcionImg: r.descripcionImg, imagen_tag: r.imagen_tag
+        }];
+        stopAllAudio();
+        const audioEls = [];
+        for (const p of partes) {
+          const au = addBotPart(p);
+          if (au) audioEls.push(au);
+        }
+        if (audioEls.length) playAudioSequence(audioEls);
+        actualizarMeta(r);
+      } catch (e) {
+        console.error('[Quinti] Refresh error', e);
+        addBotPart({ chica: 'Sistema', texto: 'Error al regenerar: ' + e.message });
+      } finally {
+        busy = false;
+        $('btn-refresh').disabled = false;
+        $('send').disabled = false;
+        $('input').focus();
+      }
+    };
+
     $('btn-reset').onclick = () => {
       stopAllAudio();
       resetChat();
       $('msgs').innerHTML = '';
       const st = getEstado();
-      $('chat-meta').textContent = `fase: ${st.fase}`;
+      $('chat-meta').textContent = `fase: ${st.fase} · relación: ${st.relacion} · lugar: —`;
+      aplicarFondoLugar('');
     };
     $('btn-salir-chat').onclick = () => {
       stopAllAudio();
       volverAlSelector();
       $('msgs').innerHTML = '';
+      aplicarFondoLugar('');
       show('screen-select');
     };
 
@@ -506,7 +582,7 @@
       console.log('Últimos votos:', (d.items || []).slice(-10));
       return d;
     };
-    console.log('%c[Quinti] Listo. F12 = consola de tags. quintiFeedbackStats() = votos.', 'color:#a78bfa');
+    console.log('%c[Quinti] Listo. F12 = testing tags. ↻ Refresh regenera respuesta.', 'color:#a78bfa');
   </script>
 </body>
 </html>
