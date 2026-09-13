@@ -255,30 +255,21 @@ function razonarTagTestingIA(chica, mensajeUsuario, textoBot, tagIA, tagRealUsad
   const realIncoherente = tagIncompatibleConRopa(tagRealUsado, ropa.actual);
 
   // LOG BIEN VISIBLE
-  console.log(
-    '%c════════════════════════════════════════════
-' +
-    '%c  ★ ESTE TAG DETERMINÓ LA IA (TESTING) ★
-' +
-    '%c════════════════════════════════════════════',
-    'color:#f59e0b;font-weight:bold',
-    'color:#fbbf24;font-weight:bold;font-size:14px',
-    'color:#f59e0b;font-weight:bold'
-  );
+  console.log('%c========== ESTE TAG DETERMINO LA IA (TESTING) ==========', 'color:#fbbf24;font-weight:bold;font-size:13px');
   console.log('%c  Tag IA →', 'color:#fbbf24;font-weight:bold', tagIA || '(ninguno)');
   console.log('%c  Tag REAL usado →', 'color:#34d399;font-weight:bold', tagRealUsado || '(ninguno)');
   console.log('%c  (El tag IA NO cambia la imagen; solo se compara)', 'color:#94a3b8;font-style:italic');
   console.groupCollapsed('%c  Razonamiento testing (iterativo)', 'color:#38bdf8');
-  console.log('1) ¿Qué acción está pasando?', accion);
-  console.log('2) ¿Quién / qué?', sujeto);
-  console.log('3) ¿Qué ropa lleva / cómo está?', ropaPregunta);
+  console.log('1) Que accion esta pasando?', accion);
+  console.log('2) Quien / que?', sujeto);
+  console.log('3) Que ropa lleva / como esta?', ropaPregunta);
   console.log('4) Tag sugerido por razonamiento local:', sugerido);
-  console.log('5) ¿Tag IA incoherente con ropa actual?', iaIncoherente ? 'SÍ ⚠️' : 'no');
-  console.log('6) ¿Tag REAL incoherente con ropa actual?', realIncoherente ? 'SÍ ⚠️' : 'no');
+  console.log('5) Tag IA incoherente con ropa actual?', iaIncoherente ? 'SI' : 'no');
+  console.log('6) Tag REAL incoherente con ropa actual?', realIncoherente ? 'SI' : 'no');
   console.log('Mensaje usuario:', mensajeUsuario);
   console.log('Texto bot (recorte):', String(textoBot || '').slice(0, 120));
   console.groupEnd();
-  console.log('%c════════════════════════════════════════════', 'color:#f59e0b;font-weight:bold');
+  console.log('%c========================================================', 'color:#fbbf24;font-weight:bold');
 
   return {
     accion,
