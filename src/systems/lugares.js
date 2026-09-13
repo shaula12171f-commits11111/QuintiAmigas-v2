@@ -27,7 +27,7 @@ export const LUGARES = {
   parque: {
     id: 'parque',
     nombre: 'Parque',
-    fondo: '', // ← poné tu link de imagen aquí
+    fondo: 'https://raw.githubusercontent.com/Sorrow12171/XDDDDDDDDDDDDDDDDDDDDXDXDXDXDXDXD68/main/imagenes/img_1782521737170.jpg', // ← poné tu link de imagen aquí
     keywords: ['parque', 'plaza', 'jardin', 'jardín', 'aire libre']
   },
   playa: {
