@@ -1,7 +1,7 @@
 // ============================================================
 //  Motor principal - QuintiAmigas v2
-//  Tags: IA elige el tag principal (se usa de verdad)
-//  + tagEngine estilo Nakardas pasa a TESTING only
+//  Tags: Qwen elige el tag principal (se usa de verdad)
+//  + IA tag + Nakardas pasan a TESTING only
 //  + Estados de relacion automaticos + lugar actual (sugerencia vs orden)
 // ============================================================
 
@@ -19,7 +19,7 @@ import { getHistoria, rellenarNombre } from '../stories/historias.js';
 import { getLore } from '../world/lore.js';
 import { clasificarIntencionLugar, getFondoLugar, getLugar } from '../systems/lugares.js';
 import { detectarEmocionEnTexto, listarEmociones } from '../systems/emociones.js';
-import { GROQ_KEYS, MODELO, NOMBRE_USUARIO_DEFAULT } from '../../config.js';
+import { GROQ_KEYS, MODELO, MODELO_TAGS, NOMBRE_USUARIO_DEFAULT } from '../../config.js';
 
 export const FASE = { NORMAL: 'normal', TRASLADO: 'traslado', LLEGADA: 'llegada', INTIMO: 'intimo' };
 
@@ -617,8 +617,11 @@ function extraerHechos() {
   estado.hechos = [...new Set(estado.hechos)].slice(-12);
 }
 
-async function llamarGroq(messages) {
+async function llamarGroq(messages, opts = {}) {
   if (!GROQ_KEYS?.length) throw new Error('Configura tus API keys en config.js');
+  const model = opts.model || MODELO || 'llama-3.3-70b-versatile';
+  const temperature = opts.temperature ?? 1.05;
+  const max_tokens = opts.max_tokens ?? 1600;
   let ultimoError = null;
   for (let i = 0; i < GROQ_KEYS.length; i++) {
     const key = GROQ_KEYS[(estado.keyIndex + i) % GROQ_KEYS.length];
@@ -628,11 +631,11 @@ async function llamarGroq(messages) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
-          model: MODELO || 'llama-3.3-70b-versatile',
+          model,
           messages,
-          temperature: 1.05,
+          temperature,
           top_p: 0.95,
-          max_tokens: 1600
+          max_tokens
         })
       });
       if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -734,6 +737,89 @@ function buscarTagEnPack(chica, claves, soloNoSex) {
     if (hit) return hit;
   }
   return null;
+}
+
+
+/**
+ * Selector de tag con Qwen (sistema principal).
+ * Recibe mensaje usuario + texto de la chica + tags reales de imagenes.js + ropa.
+ * Devuelve el tag más coherente.
+ */
+async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = false) {
+  const tags = soloNoSex ? listarTagsNoSex(chica) : listarTags(chica);
+  if (!tags.length) return { tag: 'hablando', razon: 'sin_tags', fuente: 'qwen' };
+
+  const ropa = getRopaChica(chica);
+  const listaTags = tags.join(', ');
+
+  const system = `Sos un selector de tags de imagen para roleplay erótico.
+Se te da el mensaje del usuario, la respuesta de la chica, el estado de ropa y la lista REAL de tags disponibles.
+Debés elegir UN solo tag de esa lista que mejor represente la escena.
+
+Reglas estrictas:
+- SOLO podés elegir un tag que esté en la lista. No inventes tags.
+- Prestá atención a la zona del cuerpo (culo, ano, coño, tetas, boca, etc.).
+- Prestá atención a si hay penetración, solo roce, oral, etc.
+- Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
+- Si el usuario solo muestra la verga, usá un tag de muestra de verga si existe.
+- Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON.`;
+
+  const user = `CHICA: ${chica}
+ROPA ACTUAL: ${ropa.actual || 'desconocida'}
+ROPA ANTERIOR: ${ropa.anterior || '—'}
+
+MENSAJE DEL USUARIO:
+"""${String(mensajeUsuario || '').slice(0, 800)}"""
+
+RESPUESTA DE LA CHICA:
+"""${String(textoBot || '').slice(0, 1200)}"""
+
+TAGS DISPONIBLES (elegí UNO exacto de esta lista):
+${listaTags}
+
+Respondé solo el tag:`;
+
+  try {
+    const raw = await llamarGroq(
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ],
+      {
+        model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : 'qwen/qwen3.6-27b',
+        temperature: 0.2,
+        max_tokens: 40
+      }
+    );
+
+    let tag = String(raw || '').trim().split(/[\n\r, ]/)[0].replace(/["'`]/g, '').trim();
+    // Normalizar contra la lista real
+    tag = normalizarTag(chica, tag, soloNoSex);
+
+    // Seguridad no-sex
+    if (soloNoSex) {
+      const esMuestra = /usuario_muestra_su_verga|viendo_verga|ve_mi_verga|muestra_su_verga/i.test(tag);
+      if (!esMuestra && esTagSex(tag)) tag = 'hablando';
+    }
+
+    // Coherencia de ropa
+    if (tagIncompatibleConRopa(tag, ropa.actual)) {
+      const alt = tags.find(t =>
+        !tagIncompatibleConRopa(t, ropa.actual) &&
+        (ropa.actual === 'desnuda' ? /desnuda|hablando|mostrando_culo_sin|culo(?!.*tanga)/.test(t) : true)
+      );
+      if (alt) {
+        log('Qwen tag corregido por ropa:', tag, '→', alt);
+        tag = alt;
+      }
+    }
+
+    return { tag, razon: `qwen:${raw?.slice(0, 40)}`, fuente: 'qwen' };
+  } catch (e) {
+    console.error('[Qwen tag] Error:', e);
+    // Fallback: tag de la IA principal o hablando
+    return { tag: 'hablando', razon: `qwen_error:${e.message}`, fuente: 'qwen_error' };
+  }
 }
 
 /** TESTING ONLY — Motor Nakardas (ya no decide el tag real, solo se compara con la IA) */
@@ -859,86 +945,68 @@ export async function enviarMensaje(mensajeUsuario) {
   const bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
   const ahoraSoloNoSex = soloMuestraUsuario ? false : !escenaSex && !(PATRON_SEXO.test(mensajeUsuario) || PATRON_ORAL.test(mensajeUsuario));
 
-  const partes = bloques.map((b) => {
-    if (b.chica === 'Aldo') return { chica: 'Aldo', texto: b.texto, imagenUrl: '', audioUrl: '', descripcionImg: '', imagen_tag: '' };
-
-    // === NUEVO ORDEN: la IA decide el tag real ===
-    // 1. Tag propuesto por la IA (prioridad máxima)
-    let tagIA = normalizarTag(b.chica, parsed.imagen_tag || 'hablando', ahoraSoloNoSex);
-
-    // Seguridad mínima: si es escena no-sex, no permitir tags sexuales
-    if (ahoraSoloNoSex) {
-      const esMuestraTag = /usuario_muestra_su_verga|viendo_verga|ve_mi_verga|muestra_su_verga/i.test(tagIA);
-      if (!esMuestraTag && (esTagSex(tagIA) || /chup|foll|doggy|anal|cowgirl|mision|handjob|paja|oral|bola/i.test(tagIA))) {
-        tagIA = 'hablando';
-      }
+  const partes = [];
+  for (const b of bloques) {
+    if (b.chica === 'Aldo') {
+      partes.push({ chica: 'Aldo', texto: b.texto, imagenUrl: '', audioUrl: '', descripcionImg: '', imagen_tag: '' });
+      continue;
     }
 
-    // Coherencia de ropa (solo corrección suave, no cambia a otro sistema)
-    const ropa = getRopaChica(b.chica);
-    if (tagIncompatibleConRopa(tagIA, ropa.actual)) {
-      const alt = listarTags(b.chica).find(t =>
-        !tagIncompatibleConRopa(t, ropa.actual) &&
-        (ropa.actual === 'desnuda' ? /desnuda|hablando|mostrando_culo_sin/.test(t) : true)
-      );
-      if (alt) {
-        console.log('%c[ropa-fix]', 'color:#f59e0b', b.chica, tagIA, '→', alt, '(incompatible con ropa actual)');
-        tagIA = alt;
-      }
-    }
+    // === TAG REAL: Qwen elige ===
+    const qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex);
+    let tagFinal = qwen.tag || 'hablando';
 
-    // Resolver imagen con el tag de la IA (este es el que se usa de verdad)
-    const media = resolverImagen(b.chica, tagIA, soloMuestraUsuario ? false : ahoraSoloNoSex);
+    // Resolver imagen con el tag de Qwen (este es el que se usa de verdad)
+    const media = resolverImagen(b.chica, tagFinal, soloMuestraUsuario ? false : ahoraSoloNoSex);
 
-    // Actualizar ropa según el tag REAL usado (el de la IA)
+    // Actualizar ropa según el tag REAL usado (Qwen)
     actualizarRopaDesdeTag(b.chica, media.tag, media.descripcion || '');
 
-    // === TESTING ONLY: motor Nakardas (ya NO decide el tag real) ===
-    const nakardas = elegirTag(b.chica, parsed.imagen_tag || '', b.texto, mensajeUsuario, ahoraSoloNoSex, intencion);
+    // === TESTING ONLY: IA tag + Nakardas (NO deciden el tag real) ===
+    const tagIAOriginal = parsed.imagen_tag || '';
+    const nakardas = elegirTag(b.chica, tagIAOriginal, b.texto, mensajeUsuario, ahoraSoloNoSex, intencion);
 
-    // Testing log ampliado (IA vs Nakardas)
     razonarTagTestingIA(
       b.chica,
       mensajeUsuario,
       b.texto,
-      parsed.imagen_tag || '',   // lo que propuso la IA originalmente
-      media.tag                 // lo que finalmente se usó (IA + fixes mínimos)
+      tagIAOriginal,
+      media.tag
     );
 
-    // Log extra de comparación
-    console.log('%c[TESTING Nakardas vs IA]', 'color:#a78bfa', {
+    console.log('%c[TESTING Qwen vs IA vs Nakardas]', 'color:#a78bfa', {
       chica: b.chica,
-      tagIA_original: parsed.imagen_tag || '(ninguno)',
-      tagIA_usado: media.tag,
+      tagQwen: media.tag,
+      razonQwen: qwen.razon,
+      tagIA: tagIAOriginal || '(ninguno)',
       tagNakardas: nakardas.elegido,
-      razonNakardas: nakardas.razon,
-      coinciden: media.tag === nakardas.elegido ? 'SÍ' : 'NO'
+      razonNakardas: nakardas.razon
     });
 
     logGroup(`Tag → ${b.chica}`, {
       intencion: intencion ? intencion.label : '(ninguna)',
-      tagIA: media.tag,
+      tagQwen: media.tag,
+      tagIA_testing: tagIAOriginal,
       tagNakardasTesting: nakardas.elegido,
       accionAnterior: estado.accionActual,
       ropaActual: getRopaChica(b.chica).actual,
       ropaAnterior: getRopaChica(b.chica).anterior
     });
 
-    // Emocion detectada (info extra, no fuerza imagen todavia)
     const emo = detectarEmocionEnTexto(b.texto, b.chica);
     if (emo && emo !== 'neutral') {
       console.log('%c[emocion]', 'color:#22c55e', b.chica, '→', emo);
     }
 
-    return {
+    partes.push({
       chica: b.chica,
       texto: b.texto,
       imagenUrl: media.url,
       audioUrl: media.audio || '',
       descripcionImg: media.descripcion || '',
       imagen_tag: media.tag
-    };
-  });
+    });
+  }
 
   const parteConDesc = partes.find((p) => p.descripcionImg?.trim());
   if (parteConDesc) estado.outfitActual = { chica: parteConDesc.chica, tag: parteConDesc.imagen_tag, descripcion: parteConDesc.descripcionImg.trim() };
