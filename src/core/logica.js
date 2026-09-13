@@ -363,6 +363,67 @@ export function getEstado() {
     ropaPorChica: { ...estado.ropaPorChica }
   };
 }
+
+/** Serializa el estado completo para guardar en localStorage (Memorias) */
+export function exportarEstadoCompleto() {
+  const ropaCopy = {};
+  for (const [k, v] of Object.entries(estado.ropaPorChica || {})) {
+    ropaCopy[k] = { ...v };
+  }
+  return {
+    version: 1,
+    fecha: Date.now(),
+    chica: estado.chica,
+    chicasActivas: [...(estado.chicasActivas || [])],
+    fase: estado.fase,
+    ubicacion: estado.ubicacion,
+    relacion: estado.relacion,
+    modo: estado.modo,
+    historiaId: estado.historiaId,
+    accionActual: estado.accionActual,
+    outfitActual: estado.outfitActual ? { ...estado.outfitActual } : null,
+    mensajesCount: estado.mensajesCount || 0,
+    nombreUsuario: estado.nombreUsuario,
+    hechos: [...(estado.hechos || [])],
+    historial: estado.historial.map(h => ({ ...h })),
+    ultimoMensajeUsuario: estado.ultimoMensajeUsuario,
+    ropaPorChica: ropaCopy
+  };
+}
+
+/** Restaura un estado completo guardado (Memorias). No toca keyIndex. */
+export function restaurarEstadoCompleto(snap) {
+  if (!snap || typeof snap !== 'object') throw new Error('Snapshot inválido');
+  estado.chica = snap.chica || null;
+  estado.chicasActivas = Array.isArray(snap.chicasActivas) ? [...snap.chicasActivas] : (snap.chica ? [snap.chica] : []);
+  estado.fase = snap.fase || FASE.NORMAL;
+  estado.ubicacion = snap.ubicacion || null;
+  estado.relacion = snap.relacion || RELACION.DESCONOCIDA;
+  estado.modo = snap.modo || 'libre';
+  estado.historiaId = snap.historiaId || null;
+  estado.accionActual = snap.accionActual || null;
+  estado.outfitActual = snap.outfitActual ? { ...snap.outfitActual } : null;
+  estado.mensajesCount = snap.mensajesCount || 0;
+  if (snap.nombreUsuario) estado.nombreUsuario = snap.nombreUsuario;
+  estado.hechos = Array.isArray(snap.hechos) ? [...snap.hechos] : [];
+  estado.historial = Array.isArray(snap.historial) ? snap.historial.map(h => ({ ...h })) : [];
+  estado.ultimoMensajeUsuario = snap.ultimoMensajeUsuario || null;
+  estado.ropaPorChica = {};
+  if (snap.ropaPorChica && typeof snap.ropaPorChica === 'object') {
+    for (const [k, v] of Object.entries(snap.ropaPorChica)) {
+      estado.ropaPorChica[k] = { ...v };
+    }
+  }
+  log('Estado restaurado desde Memoria', {
+    chica: estado.chica,
+    fase: estado.fase,
+    relacion: estado.relacion,
+    msgs: estado.historial.length,
+    ropa: estado.ropaPorChica
+  });
+  return getEstado();
+}
+
 export function setNombreUsuario(nombre) { if (nombre && nombre.trim()) estado.nombreUsuario = nombre.trim(); }
 export function getNombreUsuario() { return estado.nombreUsuario; }
 
