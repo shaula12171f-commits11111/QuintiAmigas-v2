@@ -401,6 +401,212 @@ function tagsDe(chica, soloNoSex) {
   return tags?.length ? tags : ['hablando'];
 }
 
+
+/**
+ * Filtra tags según estado de ropa actual.
+ * Si está desnuda → elimina / penaliza fuerte tags con tanga, ropa, bikini, etc.
+ */
+function filtrarTagsPorRopa(tags, ropaActual) {
+  if (!ropaActual || ropaActual === 'desconocida') return tags;
+  const r = String(ropaActual).toLowerCase();
+
+  return tags.filter(tag => {
+    const t = String(tag).toLowerCase();
+    if (r === 'desnuda') {
+      // Prohibir tags que claramente implican ropa
+      if (/tanga|bikini|ropa_|vestido|yukata|sujetador|lenceria|cosplay|idol|quitandose/.test(t) && !/desnuda|sin_ropa|sinropa/.test(t)) {
+        return false;
+      }
+    }
+    if (r === 'tanga') {
+      if (/bikini_playa|ropa_idol|ropa_vestido|yukata/.test(t)) return false;
+    }
+    if (r === 'bikini') {
+      if (/ropa_idol|ropa_vestido|yukata/.test(t)) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * Señales semánticas del texto (usuario + bot)
+ */
+function extraerSenales(texto) {
+  const t = norm(texto);
+  return {
+    quiereCulo: /culo|nalga|trasero|ass|mostr.*culo|ense[nñ].*culo|da la vuelta|gira|arquea/.test(t),
+    quiereDesnuda: /desnud|sin ropa|sin nada|ya no lleva|no lleva nada|completamente desnud|totalmente desnud|sin ropa interior|sin pant/.test(t),
+    quiereTanga: /tanga|microtanga|hilo dental/.test(t),
+    quiereTetas: /teta|pecho|seno|mostrar.*teta/.test(t),
+    quiereOral: /chup|mam[ao]|oral|lam[ei]|blowjob|deepthroat/.test(t),
+    quierePenetracion: /foll|cog|penetr|meto|metela|doggy|mision|cowgirl|anal/.test(t),
+    quiereAssjob: /assjob|entre (las )?nalgas|frot.*culo|pija.*culo|verga.*culo/.test(t),
+    mencionaRopa: /tanga|bikini|ropa|vestid|pantal|falda|sujetador|lencer/.test(t)
+  };
+}
+
+/**
+ * Score dinámico de un tag contra las señales + tokens del texto
+ */
+function scoreTagDinamicoContraTexto(tag, senales, textoNorm, accionAnterior) {
+  const t = norm(tag).replace(/_/g, ' ');
+  const tokens = t.split(/\s+/).filter(x => x.length > 2);
+  let score = 0;
+  const detalles = [];
+
+  // 1. Match de tokens del nombre del tag en el texto
+  let hits = 0;
+  for (const tok of tokens) {
+    if (textoNorm.includes(tok) || tokenApareceEnMensaje(tok, textoNorm)) {
+      hits++;
+      score += tok.length >= 5 ? 8 : 4;
+    }
+  }
+  if (hits > 0) detalles.push(`tok:${hits}/${tokens.length}`);
+
+  // 2. Señales semánticas fuertes
+  if (senales.quiereCulo) {
+    if (/culo|nalga|ass|mostrando_culo|moviendo_el_culo/.test(t)) {
+      score += 18;
+      detalles.push('+culo');
+    }
+  }
+  if (senales.quiereDesnuda) {
+    if (/desnuda|sin_ropa|sinropa|sin_ropa/.test(t)) {
+      score += 22;
+      detalles.push('+desnuda');
+    }
+    // Penalizar fuerte tags con tanga/ropa si el texto dice desnuda
+    if (/tanga|bikini|ropa_|vestido|lenceria/.test(t) && !/desnuda|sin_ropa/.test(t)) {
+      score -= 25;
+      detalles.push('-tanga_vs_desnuda');
+    }
+  }
+  if (senales.quiereTanga) {
+    if (/tanga/.test(t)) {
+      score += 16;
+      detalles.push('+tanga');
+    }
+  }
+  if (senales.quiereOral && /chup|oral|mam|lam|blow/.test(t)) {
+    score += 14;
+    detalles.push('+oral');
+  }
+  if (senales.quierePenetracion && /doggy|mision|cowgirl|foll|anal|penetr|side|stand|aire/.test(t)) {
+    score += 14;
+    detalles.push('+penetracion');
+  }
+  if (senales.quiereAssjob && /assjob|culo.*job|entre.*nalga|frot.*culo/.test(t)) {
+    score += 20;
+    detalles.push('+assjob');
+  }
+
+  // 3. Continuidad
+  if (accionAnterior && norm(accionAnterior) === norm(tag)) {
+    score += 12;
+    detalles.push('+continuidad');
+  } else if (accionAnterior) {
+    const prev = norm(accionAnterior);
+    // mismo grupo
+    if ((/culo|nalga/.test(prev) && /culo|nalga/.test(t)) ||
+        (/chup|oral/.test(prev) && /chup|oral/.test(t)) ||
+        (/doggy|mision|cowgirl|foll/.test(prev) && /doggy|mision|cowgirl|foll/.test(t))) {
+      score += 6;
+      detalles.push('+grupo');
+    }
+  }
+
+  // 4. Penalizar "hablando" si hay señales de acción
+  if (tag === 'hablando' && (senales.quiereCulo || senales.quiereOral || senales.quierePenetracion || senales.quiereDesnuda)) {
+    score -= 10;
+  }
+
+  return { score, detalles };
+}
+
+/**
+ * Motor dinámico principal: elige el mejor tag disponible
+ * según tags reales de imagenes.js + estado de ropa + texto.
+ */
+function elegirTagDinamico({
+  chica,
+  mensajeUsuario = '',
+  textoBot = '',
+  soloNoSex = false,
+  accionAnterior = null,
+  ropaActual = null,
+  tagModelo = ''
+}) {
+  let tags = tagsDe(chica, soloNoSex);
+  if (!tags.length) return { tag: 'hablando', razon: 'sin_tags', puntuacion: 0, fuente: 'dinamico' };
+
+  // 1. Filtro fuerte por ropa
+  const tagsAntes = tags.length;
+  tags = filtrarTagsPorRopa(tags, ropaActual);
+  const filtradosPorRopa = tagsAntes - tags.length;
+
+  // 2. Señales del texto combinado (usuario + bot)
+  const textoCombo = (mensajeUsuario || '') + ' ' + (textoBot || '');
+  const senales = extraerSenales(textoCombo);
+  const textoNorm = norm(textoCombo);
+
+  // 3. Score cada tag
+  const scored = [];
+  for (const tag of tags) {
+    if (tag === 'hablando' && tags.length > 3) continue; // solo al final
+    const { score, detalles } = scoreTagDinamicoContraTexto(tag, senales, textoNorm, accionAnterior);
+    if (score > 0) {
+      scored.push({ tag, score, detalles });
+    }
+  }
+
+  // También dar un poco de peso al tag que propuso el modelo si está disponible
+  if (tagModelo) {
+    const tagNorm = normalizarTag(chica, tagModelo, soloNoSex);
+    const exists = scored.find(s => s.tag === tagNorm);
+    if (exists) {
+      exists.score += 8;
+      exists.detalles.push('+modelo');
+    } else if (tags.includes(tagNorm)) {
+      scored.push({ tag: tagNorm, score: 8, detalles: ['+modelo_solo'] });
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score);
+
+  if (!scored.length || scored[0].score < 6) {
+    // Fallback: si hay señal de culo + desnuda y existe un tag de culo sin tanga
+    if (senales.quiereCulo && senales.quiereDesnuda) {
+      const culoDesnudo = tags.find(t => /mostrando_culo(?!.*tanga)|culo.*sin_ropa|culo.*desnuda|desnuda/.test(t) && !/tanga/.test(t));
+      if (culoDesnudo) {
+        return {
+          tag: culoDesnudo,
+          razon: `dinamico:fallback_culo_desnudo(ropa=${ropaActual})`,
+          puntuacion: 15,
+          fuente: 'dinamico',
+          candidatos: scored.slice(0, 5)
+        };
+      }
+    }
+    return {
+      tag: tags.includes('hablando') ? 'hablando' : tags[0],
+      razon: `dinamico:fallback(score_bajo)`,
+      puntuacion: 0,
+      fuente: 'dinamico',
+      candidatos: scored.slice(0, 5)
+    };
+  }
+
+  const best = scored[0];
+  return {
+    tag: best.tag,
+    razon: `dinamico:${best.detalles.join('+')}(score=${best.score.toFixed(1)}${filtradosPorRopa ? `,ropa_filtro=-${filtradosPorRopa}` : ''})`,
+    puntuacion: best.score,
+    fuente: 'dinamico',
+    candidatos: scored.slice(0, 5)
+  };
+}
+
 export function resolverTagEscena({
   chica,
   mensajeUsuario = '',
@@ -408,15 +614,30 @@ export function resolverTagEscena({
   tagModelo = '',
   soloNoSex = true,
   accionAnterior = null,
-  intencionUsuario = null
+  intencionUsuario = null,
+  ropaActual = null   // NUEVO: estado de ropa
 }) {
-  const tags = tagsDe(chica, soloNoSex);
-  const cont = detectarIntencionContinuidad(mensajeUsuario, accionAnterior);
+  // ─── MOTOR DINÁMICO (prioridad máxima) ───
+  // Se basa en los tags REALES de imagenes.js + estado de ropa + señales del texto
+  const dinamico = elegirTagDinamico({
+    chica,
+    mensajeUsuario,
+    textoBot,
+    soloNoSex,
+    accionAnterior,
+    ropaActual,
+    tagModelo
+  });
 
-  // ─── 0. MATCH CONTRA TAGS REALES (prioridad máxima) ───
-  // Resuelve: tag literal, "me chupa la polla y le jalo el cabello", etc.
-  const realMatch = matchContraTagsReales(mensajeUsuario, tags);
-  if (realMatch.tag && realMatch.tag !== 'hablando') {
+  // Si el dinámico tiene buena confianza, lo usamos
+  if (dinamico.puntuacion >= 10 || dinamico.fuente === 'dinamico') {
+    return dinamico;
+  }
+
+  // ─── Fallback: match exacto contra tags reales (legacy) ───
+  const tags = tagsDe(chica, soloNoSex);
+  const realMatch = matchContraTagsReales(mensajeUsuario + ' ' + textoBot, tags);
+  if (realMatch.tag && realMatch.tag !== 'hablando' && realMatch.puntuacion >= 18) {
     return {
       tag: realMatch.tag,
       razon: `tags-reales:${realMatch.detalle}(${Math.round(realMatch.puntuacion)})`,
@@ -425,112 +646,11 @@ export function resolverTagEscena({
     };
   }
 
-  // ─── 1. Pista fuerte desde logica.js ───
-  if (intencionUsuario && Array.isArray(intencionUsuario.tagHint) && intencionUsuario.tagHint.length) {
-    for (const hint of intencionUsuario.tagHint) {
-      let hit = encontrarTagMasPertinente(hint, tags);
-      if (!hit) hit = normalizarTag(chica, hint, soloNoSex);
-      if (hit && hit !== 'hablando') {
-        return {
-          tag: hit,
-          razon: `intencion:${intencionUsuario.label || hint}`,
-          puntuacion: 15,
-          fuente: 'intencion'
-        };
-      }
-    }
-  }
-
-  // ─── 2. Keywords clásicos ───
-  const userDet = detectarAccionEnTexto(mensajeUsuario, { umbral: UMBRAL });
-  if (userDet.tag) {
-    let hit = encontrarTagMasPertinente(userDet.tag, tags);
-    if (!hit) hit = normalizarTag(chica, userDet.tag, soloNoSex);
-    if (hit && hit !== 'hablando') {
-      return {
-        tag: hit,
-        razon: `usuario:${userDet.tag}(${userDet.puntuacion})`,
-        puntuacion: userDet.puntuacion,
-        fuente: 'usuario'
-      };
-    }
-  }
-
-  // ─── 3. Continuidad ───
-  if (cont.intencion === 'continuar' && accionAnterior && accionAnterior !== 'hablando') {
-    const hit = encontrarTagMasPertinente(accionAnterior, tags) ||
-      (tags.includes(accionAnterior) ? accionAnterior : null);
-    if (hit) {
-      return {
-        tag: hit,
-        razon: `continuidad:${cont.confianza.toFixed(2)}`,
-        puntuacion: cont.confianza * 10,
-        fuente: 'continuidad'
-      };
-    }
-  }
-
-  const userTieneAlgoSexual = userDet.puntuacion >= 6 || /chup|foll|mam[ao]|doggy|anal|paja|besame|desnud|verga|pija|polla|agarr|apriet|manose|nalgue|culo|corro|semen|leche|facial|cum|eyacul|corrida/.test(norm(mensajeUsuario));
-  if (soloNoSex && !userTieneAlgoSexual && cont.intencion !== 'continuar') {
-    if (tagModelo && tagModelo !== 'hablando') {
-      const neutro = /^(hablando|selfie|ropa_|besando$|mostrando_sujetador|quitandose|moviendo_el_culo)/i.test(tagModelo);
-      const sexish = esTagSex(tagModelo) || /chup|foll|doggy|anal|cowgirl|mision|handjob|paja|oral|bola|mostrando_culo|culo_tanga/i.test(tagModelo);
-      if (neutro && !sexish) {
-        const hit = normalizarTag(chica, tagModelo, true);
-        return { tag: hit, razon: 'modelo_neutro', puntuacion: 0, fuente: 'modelo' };
-      }
-    }
-    return { tag: 'hablando', razon: 'sin_accion_usuario→hablando', puntuacion: 0, fuente: 'default' };
-  }
-
-  // ─── 4. Texto del bot ───
-  if (textoBot && (!soloNoSex || userTieneAlgoSexual || cont.intencion === 'continuar')) {
-    // También intentar match contra tags reales con el texto del bot
-    const botReal = matchContraTagsReales(textoBot, tags);
-    if (botReal.tag && botReal.tag !== 'hablando' && botReal.puntuacion >= 30) {
-      if (!(soloNoSex && esTagSex(botReal.tag) && !/usuario_muestra|viendo_verga|agarra/.test(botReal.tag))) {
-        return {
-          tag: botReal.tag,
-          razon: `bot-tags-reales:${botReal.detalle}`,
-          puntuacion: botReal.puntuacion,
-          fuente: 'bot'
-        };
-      }
-    }
-    const botDet = detectarAccionEnTexto(textoBot, { umbral: soloNoSex ? 18 : 12 });
-    if (botDet.tag) {
-      let hit = encontrarTagMasPertinente(botDet.tag, tags);
-      if (!hit) hit = normalizarTag(chica, botDet.tag, soloNoSex);
-      if (hit && hit !== 'hablando') {
-        if (!(soloNoSex && esTagSex(hit) && !/usuario_muestra|viendo_verga|agarra/.test(hit))) {
-          return {
-            tag: hit,
-            razon: `bot:${botDet.tag}(${botDet.puntuacion})`,
-            puntuacion: botDet.puntuacion,
-            fuente: 'bot'
-          };
-        }
-      }
-    }
-  }
-
-  // ─── 5. Tag del modelo ───
-  if (tagModelo && tagModelo !== 'hablando') {
-    const hit = encontrarTagMasPertinente(tagModelo, tags) || normalizarTag(chica, tagModelo, soloNoSex);
-    if (hit && !(soloNoSex && esTagSex(hit) && !/usuario_muestra|viendo_verga|agarra/.test(hit))) {
-      return { tag: hit, razon: 'modelo', puntuacion: 0, fuente: 'modelo' };
-    }
-  }
-
-  // ─── 6. Memoria de escena ───
-  if (!soloNoSex && accionAnterior && accionAnterior !== 'hablando') {
-    const hit = encontrarTagMasPertinente(accionAnterior, tags);
-    if (hit) {
-      return { tag: hit, razon: 'memoria_escena', puntuacion: 0, fuente: 'continuidad' };
-    }
-  }
-
-  return { tag: 'hablando', razon: 'fallback', puntuacion: 0, fuente: 'default' };
+  // ─── Último fallback ───
+  return {
+    tag: dinamico.tag || 'hablando',
+    razon: dinamico.razon || 'fallback_final',
+    puntuacion: dinamico.puntuacion || 0,
+    fuente: dinamico.fuente || 'fallback'
+  };
 }
-
-export { UMBRAL, PESOS };
