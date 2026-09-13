@@ -761,7 +761,6 @@ function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex, inten
   }
 
   // Coherencia de ropa: si está desnuda, no usar tags de tanga/ropa
-  const ropa = getRopaChica(chica);
   if (tagIncompatibleConRopa(elegido, ropa.actual)) {
     const alt = listarTags(chica).find(t =>
       !tagIncompatibleConRopa(t, ropa.actual) &&
