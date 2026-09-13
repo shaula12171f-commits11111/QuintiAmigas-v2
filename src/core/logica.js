@@ -738,6 +738,7 @@ function buscarTagEnPack(chica, claves, soloNoSex) {
 
 /** TESTING ONLY — Motor Nakardas (ya no decide el tag real, solo se compara con la IA) */
 function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex, intencionUsuario = null) {
+  const ropa = getRopaChica(chica);
   const resultado = resolverTagEscena({
     chica,
     mensajeUsuario: textoUsuario || '',
@@ -745,7 +746,8 @@ function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex, inten
     tagModelo: tagModelo || '',
     soloNoSex: !!soloNoSex,
     accionAnterior: estado.accionActual,
-    intencionUsuario: intencionUsuario || null
+    intencionUsuario: intencionUsuario || null,
+    ropaActual: ropa.actual || null
   });
   let elegido = normalizarTag(chica, resultado.tag || 'hablando', soloNoSex);
   let razon = resultado.razon || 'sin';
