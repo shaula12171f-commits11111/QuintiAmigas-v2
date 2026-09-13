@@ -6,10 +6,8 @@ export const GROQ_KEYS = [
   "gsk_TU_KEY_2"
 ];
 
-// Modelo principal para el diálogo de las chicas
-export const MODELO = "openai/gpt-oss-120b";
+export const MODELO = "openai/gpt-oss-120b"; // diálogo de las chicas
 
-// Modelo para elegir el tag de imagen (Qwen — sistema principal de tags)
-export const MODELO_TAGS = "qwen/qwen3.6-27b";
+export const MODELO_TAGS = "qwen/qwen3.6-27b"; // selector de tags (Qwen)
 
 export const NOMBRE_USUARIO_DEFAULT = "Fabrizio";
