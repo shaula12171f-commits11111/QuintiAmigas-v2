@@ -2,6 +2,7 @@
 //  Motor principal - QuintiAmigas v2
 //  Tags: resolucion por especificidad (usuario > reglas > dinamico)
 //  + tagEngine estilo Nakardas (prioridad usuario > continuidad > bot)
+//  + Estados de relacion automaticos + lugar actual (sugerencia vs orden)
 // ============================================================
 
 import { armarSystemPrompt, PROMPTS_REINTENTO } from './systemPrompt.js';
@@ -16,16 +17,48 @@ import {
 import { resolverTagEscena, detectarAccionEnTexto } from '../systems/tagEngine.js';
 import { getHistoria, rellenarNombre } from '../stories/historias.js';
 import { getLore } from '../world/lore.js';
+import { clasificarIntencionLugar, getFondoLugar, getLugar } from '../systems/lugares.js';
+import { detectarEmocionEnTexto, listarEmociones } from '../systems/emociones.js';
 import { GROQ_KEYS, MODELO, NOMBRE_USUARIO_DEFAULT } from '../../config.js';
 
 export const FASE = { NORMAL: 'normal', TRASLADO: 'traslado', LLEGADA: 'llegada', INTIMO: 'intimo' };
+
+/** Estados de relacion (automatico por ahora) */
+export const RELACION = {
+  DESCONOCIDA: 'desconocida',
+  CONOCIDA: 'conocida',
+  AMIGA: 'amiga',
+  NOVIA: 'novia',
+  SEXFRIEND: 'sexfriend'
+};
+
+const RELACION_ORDEN = [
+  RELACION.DESCONOCIDA,
+  RELACION.CONOCIDA,
+  RELACION.AMIGA,
+  RELACION.NOVIA,
+  RELACION.SEXFRIEND
+];
+
 const TODAS_CHICAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'];
 const TODOS = [...TODAS_CHICAS, 'Aldo'];
 
 let estado = {
-  fase: FASE.NORMAL, ubicacion: null, chica: null, chicasActivas: [], historial: [],
-  nombreUsuario: NOMBRE_USUARIO_DEFAULT || 'Fabrizio', hechos: [], keyIndex: 0,
-  modo: 'libre', historiaId: null, outfitActual: null, accionActual: null
+  fase: FASE.NORMAL,
+  ubicacion: null,          // lugar actual (casa, cafe, parque, etc.)
+  chica: null,
+  chicasActivas: [],
+  historial: [],
+  nombreUsuario: NOMBRE_USUARIO_DEFAULT || 'Fabrizio',
+  hechos: [],
+  keyIndex: 0,
+  modo: 'libre',
+  historiaId: null,
+  outfitActual: null,
+  accionActual: null,
+  relacion: RELACION.DESCONOCIDA,
+  mensajesCount: 0,         // para progresion automatica de relacion
+  ultimoMensajeUsuario: null // para boton refresh
 };
 
 const MAX_HISTORIAL = 20;
@@ -62,23 +95,51 @@ function logGroup(title, obj) {
   console.groupEnd();
 }
 
-export function getEstado() { return { ...estado, chicasActivas: [...estado.chicasActivas] }; }
+export function getEstado() {
+  return {
+    ...estado,
+    chicasActivas: [...estado.chicasActivas],
+    fondoLugar: getFondoLugar(estado.ubicacion)
+  };
+}
 export function setNombreUsuario(nombre) { if (nombre && nombre.trim()) estado.nombreUsuario = nombre.trim(); }
 export function getNombreUsuario() { return estado.nombreUsuario; }
+
 export function iniciarChatLibre(chica) {
   if (!existeChica(chica)) throw new Error('Chica no existe');
-  estado.chica = chica; estado.chicasActivas = [chica]; estado.fase = FASE.NORMAL;
-  estado.ubicacion = null; estado.historial = []; estado.hechos = [];
-  estado.modo = 'libre'; estado.historiaId = null; estado.outfitActual = null; estado.accionActual = null;
-  log('Chat libre iniciado', { chica, usuario: estado.nombreUsuario });
+  estado.chica = chica;
+  estado.chicasActivas = [chica];
+  estado.fase = FASE.NORMAL;
+  estado.ubicacion = null;
+  estado.historial = [];
+  estado.hechos = [];
+  estado.modo = 'libre';
+  estado.historiaId = null;
+  estado.outfitActual = null;
+  estado.accionActual = null;
+  estado.relacion = RELACION.DESCONOCIDA;
+  estado.mensajesCount = 0;
+  estado.ultimoMensajeUsuario = null;
+  log('Chat libre iniciado', { chica, usuario: estado.nombreUsuario, relacion: estado.relacion });
 }
+
 export function iniciarHistoria(chica, historiaId) {
   if (!existeChica(chica)) throw new Error('Chica no existe');
   const h = getHistoria(chica, historiaId);
   if (!h) throw new Error('Historia no existe');
-  estado.chica = chica; estado.chicasActivas = [chica]; estado.fase = FASE.NORMAL;
-  estado.ubicacion = null; estado.historial = []; estado.hechos = [];
-  estado.modo = 'historia'; estado.historiaId = historiaId; estado.outfitActual = null; estado.accionActual = null;
+  estado.chica = chica;
+  estado.chicasActivas = [chica];
+  estado.fase = FASE.NORMAL;
+  estado.ubicacion = null;
+  estado.historial = [];
+  estado.hechos = [];
+  estado.modo = 'historia';
+  estado.historiaId = historiaId;
+  estado.outfitActual = null;
+  estado.accionActual = null;
+  estado.relacion = RELACION.CONOCIDA; // en historias ya se conocen un poco
+  estado.mensajesCount = 0;
+  estado.ultimoMensajeUsuario = null;
   const texto = rellenarNombre(h.mensajeBienvenida, estado.nombreUsuario);
   estado.historial.push({ role: 'assistant', content: texto, chica });
   const welcomeSexual = /chup|mamad|pija|verga|foll|coño|boxers|te saca la|en la boca/i.test(texto);
@@ -90,8 +151,18 @@ export function iniciarHistoria(chica, historiaId) {
   const media = resolverImagen(chica, tagInferido, !welcomeSexual);
   if (media.descripcion) estado.outfitActual = { chica, tag: media.tag, descripcion: media.descripcion };
   if (media.tag && media.tag !== 'hablando') estado.accionActual = media.tag;
-  return { texto, chica, imagenUrl: media.url, audioUrl: media.audio || '', descripcionImg: media.descripcion || '', imagen_tag: media.tag || 'hablando', fase: estado.fase };
+  return {
+    texto, chica,
+    imagenUrl: media.url,
+    audioUrl: media.audio || '',
+    descripcionImg: media.descripcion || '',
+    imagen_tag: media.tag || 'hablando',
+    fase: estado.fase,
+    relacion: estado.relacion,
+    ubicacion: estado.ubicacion
+  };
 }
+
 export function setChica(nombre) { iniciarChatLibre(nombre); }
 
 function esEscenaSex() {
@@ -99,6 +170,7 @@ function esEscenaSex() {
   const ultimos = estado.historial.slice(-6).map((h) => h.content || '').join(' ');
   return PATRON_SEXO.test(ultimos);
 }
+
 function detectarPersonajesEnContexto(textoUsuario) {
   const t = (textoUsuario || '').toLowerCase();
   const found = new Set(estado.chicasActivas);
@@ -108,28 +180,93 @@ function detectarPersonajesEnContexto(textoUsuario) {
   }
   return [...found].filter((n) => existePersonaje(n));
 }
-function actualizarFaseSegunUsuario(mensaje) {
+
+/** Progresion automatica de relacion */
+function actualizarRelacionAutomatica(mensajeUsuario, respuestaBot) {
+  estado.mensajesCount = (estado.mensajesCount || 0) + 1;
+  const idx = RELACION_ORDEN.indexOf(estado.relacion);
+  const m = String(mensajeUsuario || '').toLowerCase();
+  const r = String(respuestaBot || '').toLowerCase();
+
+  // Subir a conocida tras unos mensajes
+  if (estado.relacion === RELACION.DESCONOCIDA && estado.mensajesCount >= 3) {
+    estado.relacion = RELACION.CONOCIDA;
+    log('Relacion → conocida');
+  }
+  // Amiga: mas mensajes + tono amistoso
+  if (estado.relacion === RELACION.CONOCIDA && estado.mensajesCount >= 8) {
+    estado.relacion = RELACION.AMIGA;
+    log('Relacion → amiga');
+  }
+  // Novia: mencion de pareja / amor / exclusividad o muchos mensajes
+  if (estado.relacion === RELACION.AMIGA) {
+    if (/novia|novio|pareja|te amo|te quiero|somos|exclusiv/i.test(m + ' ' + r) || estado.mensajesCount >= 18) {
+      estado.relacion = RELACION.NOVIA;
+      log('Relacion → novia');
+    }
+  }
+  // Sexfriend: cuando hay escena intima reiterada
+  if ((estado.relacion === RELACION.AMIGA || estado.relacion === RELACION.NOVIA) && estado.fase === FASE.INTIMO) {
+    if (estado.mensajesCount >= 12 || /sexfriend|amigos con derechos|solo sexo/i.test(m)) {
+      // Si ya es novia no bajamos; si es amiga podemos marcar sexfriend
+      if (estado.relacion === RELACION.AMIGA) {
+        estado.relacion = RELACION.SEXFRIEND;
+        log('Relacion → sexfriend');
+      }
+    }
+  }
+}
+
+function actualizarFaseYLugar(mensaje) {
   const m = mensaje.toLowerCase();
-  if ((estado.fase === FASE.NORMAL || estado.fase === FASE.TRASLADO) && PATRON_LUGAR_PRIVADO.test(m)) {
+  const intencionLugar = clasificarIntencionLugar(mensaje);
+
+  // Solo cambiar ubicacion si es ORDEN (no sugerencia)
+  if (intencionLugar.tipo === 'orden' && intencionLugar.lugar) {
+    const anterior = estado.ubicacion;
+    estado.ubicacion = intencionLugar.lugar;
+    if (anterior !== estado.ubicacion) {
+      log('Lugar actualizado (orden):', anterior, '→', estado.ubicacion);
+      if (PATRON_LUGAR_PRIVADO.test(m) || /hotel|motel|casa|habitaci/i.test(m)) {
+        if (estado.fase === FASE.NORMAL) estado.fase = FASE.TRASLADO;
+      }
+    }
+  } else if (intencionLugar.tipo === 'sugerencia') {
+    log('Sugerencia de lugar detectada (NO se cambia ubicacion):', intencionLugar.lugar);
+    // No tocamos estado.ubicacion
+  }
+
+  // Logica previa de fase privada (por si no entro por clasificarIntencionLugar)
+  if ((estado.fase === FASE.NORMAL || estado.fase === FASE.TRASLADO) && PATRON_LUGAR_PRIVADO.test(m) && intencionLugar.tipo !== 'sugerencia') {
     estado.fase = FASE.TRASLADO;
-    if (/hotel|motel/i.test(m)) estado.ubicacion = 'hotel';
-    else if (/casa|departamento|depto/i.test(m)) estado.ubicacion = 'casa';
-    else estado.ubicacion = 'lugar privado';
+    if (/hotel|motel/i.test(m)) estado.ubicacion = estado.ubicacion || 'hotel';
+    else if (/casa|departamento|depto/i.test(m)) estado.ubicacion = estado.ubicacion || 'casa';
+    else estado.ubicacion = estado.ubicacion || 'lugar privado';
   }
   if (estado.fase === FASE.LLEGADA) {
     if (PATRON_CONFIRMACION.test(m) && !/^no\b/i.test(m.trim())) estado.fase = FASE.INTIMO;
     else if (PATRON_NEGACION.test(m)) estado.fase = FASE.NORMAL;
   }
-  if (estado.fase !== FASE.INTIMO && /chup|foll|met[eo]|cog|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|doggy|misioner|bola/i.test(m)) estado.fase = FASE.INTIMO;
+  if (estado.fase !== FASE.INTIMO && /chup|foll|met[eo]|cog|mam[ao]|mamad|lam[ei]|lamiendo|lamer|chupame|mamame|doggy|misioner|bola/i.test(m)) {
+    estado.fase = FASE.INTIMO;
+  }
 }
+
 function construirContexto(mensajeUsuarioActual = '') {
   const lineas = [
     `Fase: ${estado.fase}`,
+    `Relacion actual: ${estado.relacion}`,
     'Usuario = HOMBRE (pija). Las chicas = MUJERES.',
     `Chica principal: ${estado.chica}`,
     `Presentes: ${estado.chicasActivas.join(', ')}`
   ];
-  if (estado.ubicacion) lineas.push(`Ubicación: ${estado.ubicacion}`);
+  if (estado.ubicacion) {
+    const lug = getLugar(estado.ubicacion);
+    lineas.push(`Lugar actual: ${lug ? lug.nombre : estado.ubicacion}`);
+    lineas.push('IMPORTANTE: Estan en este lugar. NO te teletransportes a otro sitio a menos que el usuario lo ordene claramente.');
+  } else {
+    lineas.push('Lugar actual: no definido (puede ser casa o calle).');
+  }
   if (estado.fase === FASE.INTIMO) lineas.push('Escena íntima activa.');
   if (mensajeUsuarioActual && esSoloMuestra(mensajeUsuarioActual)) {
     lineas.push('⚠️ Usuario SOLO muestra la verga. Reaccioná. PROHIBIDO chupar. tag=usuario_muestra_su_verga.');
@@ -137,12 +274,19 @@ function construirContexto(mensajeUsuarioActual = '') {
   if (estado.hechos.length) lineas.push('Hechos: ' + estado.hechos.slice(-8).join(' | '));
   if (estado.outfitActual?.descripcion) lineas.push('OUTFIT: ' + estado.outfitActual.descripcion);
   if (estado.accionActual) lineas.push('Accion en curso: ' + estado.accionActual);
+
+  // Emociones disponibles (info para la IA)
+  const emos = listarEmociones(estado.chica);
+  if (emos.length) lineas.push('Emociones posibles de ' + estado.chica + ': ' + emos.join(', '));
+
   return lineas.join('\n');
 }
+
 function extraerHechos() {
   if (estado.ubicacion) estado.hechos.push(`En ${estado.ubicacion}`);
   estado.hechos = [...new Set(estado.hechos)].slice(-12);
 }
+
 async function llamarGroq(messages) {
   if (!GROQ_KEYS?.length) throw new Error('Configura tus API keys en config.js');
   let ultimoError = null;
@@ -153,7 +297,13 @@ async function llamarGroq(messages) {
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ model: MODELO || 'llama-3.3-70b-versatile', messages, temperature: 1.05, top_p: 0.95, max_tokens: 1600 })
+        body: JSON.stringify({
+          model: MODELO || 'llama-3.3-70b-versatile',
+          messages,
+          temperature: 1.05,
+          top_p: 0.95,
+          max_tokens: 1600
+        })
       });
       if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
       const data = await res.json();
@@ -163,6 +313,7 @@ async function llamarGroq(messages) {
   }
   throw ultimoError || new Error('Falló la API');
 }
+
 function parseJsonRespuesta(raw) {
   if (!raw) return null;
   let t = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
@@ -174,11 +325,13 @@ function parseJsonRespuesta(raw) {
   } catch (_) {}
   return null;
 }
+
 function postProcesarFase(respuestaTexto) {
   if (estado.fase === FASE.TRASLADO && /ya estamos|llegamos|habitaci[oó]n|cierro la puerta|a solas/i.test(respuestaTexto)) {
     estado.fase = FASE.LLEGADA;
   }
 }
+
 function partirBloquesMulti(texto, chicaDefault) {
   const re = /\[\s*(Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia|Aldo)\s*\]\s*:/gi;
   const indices = []; let m;
@@ -281,11 +434,13 @@ export async function enviarMensaje(mensajeUsuario) {
   if (!estado.chica) throw new Error('Selecciona una chica primero');
   try { await ensureImagenesLoaded(); } catch (_) {}
 
+  estado.ultimoMensajeUsuario = mensajeUsuario;
+
   const enContexto = detectarPersonajesEnContexto(mensajeUsuario);
   for (const n of enContexto) {
     if (!estado.chicasActivas.includes(n)) estado.chicasActivas.push(n);
   }
-  actualizarFaseSegunUsuario(mensajeUsuario);
+  actualizarFaseYLugar(mensajeUsuario);
 
   const soloMuestraUsuario = esSoloMuestra(mensajeUsuario);
   const escenaSex = !soloMuestraUsuario && (esEscenaSex() || PATRON_SEXO.test(mensajeUsuario));
@@ -307,10 +462,22 @@ export async function enviarMensaje(mensajeUsuario) {
     system += `\n\n⚠️ El usuario pidió específicamente: ${intencion.label}. Describí ESA acción (no inventes otra pose).`;
   }
 
+  // Info de sugerencia de lugar (si hay)
+  const intLugar = clasificarIntencionLugar(mensajeUsuario);
+  if (intLugar.tipo === 'sugerencia') {
+    system += `\n\n⚠️ El usuario SUGIRIÓ ir a "${intLugar.lugar}" (no es una orden). Responde hablando del tema pero NO digas que ya están ahí ni cambies de lugar. Sigan en el lugar actual.`;
+  }
+
   logGroup('Request', {
-    chica: estado.chica, fase: estado.fase, escenaSex, soloNoSex,
-    soloMuestra: soloMuestraUsuario, mensajeUsuario,
+    chica: estado.chica,
+    fase: estado.fase,
+    relacion: estado.relacion,
+    ubicacion: estado.ubicacion,
+    escenaSex, soloNoSex,
+    soloMuestra: soloMuestraUsuario,
+    mensajeUsuario,
     intencion: intencion ? intencion.label : '(ninguna)',
+    intencionLugar: intLugar,
     accionActual: estado.accionActual
   });
 
@@ -338,6 +505,7 @@ export async function enviarMensaje(mensajeUsuario) {
 
   postProcesarFase(parsed.respuesta);
   extraerHechos();
+  actualizarRelacionAutomatica(mensajeUsuario, parsed.respuesta);
 
   const bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
   const ahoraSoloNoSex = soloMuestraUsuario ? false : !escenaSex && !(PATRON_SEXO.test(mensajeUsuario) || PATRON_ORAL.test(mensajeUsuario));
@@ -346,13 +514,38 @@ export async function enviarMensaje(mensajeUsuario) {
     if (b.chica === 'Aldo') return { chica: 'Aldo', texto: b.texto, imagenUrl: '', audioUrl: '', descripcionImg: '', imagen_tag: '' };
     const { elegido, razon, fuente } = elegirTag(b.chica, parsed.imagen_tag || '', b.texto, mensajeUsuario, ahoraSoloNoSex, intencion);
     const media = resolverImagen(b.chica, elegido, soloMuestraUsuario ? false : ahoraSoloNoSex);
+
+    // === TESTING TAG (solo log, no cambia la seleccion real) ===
+    console.log('%c[testing tag]', 'color:#fbbf24;font-weight:bold', {
+      chica: b.chica,
+      tagElegidoPorIA: parsed.imagen_tag || '(ninguno)',
+      tagResuelto: elegido,
+      tagFinalUsado: media.tag,
+      razon,
+      fuente
+    });
+
     logGroup(`Tag → ${b.chica}`, {
       intencion: intencion ? intencion.label : '(ninguna)',
       razon, fuente,
       tagElegido: elegido, tagFinal: media.tag,
       accionAnterior: estado.accionActual
     });
-    return { chica: b.chica, texto: b.texto, imagenUrl: media.url, audioUrl: media.audio || '', descripcionImg: media.descripcion || '', imagen_tag: media.tag || elegido };
+
+    // Emocion detectada (info extra, no fuerza imagen todavia)
+    const emo = detectarEmocionEnTexto(b.texto, b.chica);
+    if (emo && emo !== 'neutral') {
+      console.log('%c[emocion]', 'color:#22c55e', b.chica, '→', emo);
+    }
+
+    return {
+      chica: b.chica,
+      texto: b.texto,
+      imagenUrl: media.url,
+      audioUrl: media.audio || '',
+      descripcionImg: media.descripcion || '',
+      imagen_tag: media.tag || elegido
+    };
   });
 
   const parteConDesc = partes.find((p) => p.descripcionImg?.trim());
@@ -372,9 +565,12 @@ export async function enviarMensaje(mensajeUsuario) {
 
   logGroup('Respuesta final', {
     fase: estado.fase,
+    relacion: estado.relacion,
+    ubicacion: estado.ubicacion,
     accionActual: estado.accionActual,
     partes: partes.map((p) => `${p.chica}: tag=${p.imagen_tag}`).join(' | ')
   });
+
   return {
     partes,
     texto: parsed.respuesta,
@@ -383,17 +579,58 @@ export async function enviarMensaje(mensajeUsuario) {
     audioUrl: partes[0]?.audioUrl || '',
     descripcionImg: partes[0]?.descripcionImg || '',
     fase: estado.fase,
+    relacion: estado.relacion,
+    ubicacion: estado.ubicacion,
+    fondoLugar: getFondoLugar(estado.ubicacion),
     chica: estado.chica,
     chicasActivas: [...estado.chicasActivas]
   };
 }
 
+/** Regenera la ultima respuesta (usa ultimoMensajeUsuario) */
+export async function regenerarUltimaRespuesta() {
+  if (!estado.ultimoMensajeUsuario) throw new Error('No hay mensaje previo para regenerar');
+  // Quitar el ultimo par user+assistant del historial para no duplicar
+  if (estado.historial.length >= 2) {
+    const last = estado.historial[estado.historial.length - 1];
+    const prev = estado.historial[estado.historial.length - 2];
+    if (last.role === 'assistant' && prev.role === 'user') {
+      estado.historial = estado.historial.slice(0, -2);
+    }
+  }
+  // No incrementar mensajesCount de nuevo de forma artificial
+  return enviarMensaje(estado.ultimoMensajeUsuario);
+}
+
 export function resetChat() {
-  estado.historial = []; estado.fase = FASE.NORMAL; estado.ubicacion = null; estado.hechos = [];
-  estado.chicasActivas = estado.chica ? [estado.chica] : []; estado.modo = 'libre'; estado.historiaId = null; estado.outfitActual = null; estado.accionActual = null;
+  estado.historial = [];
+  estado.fase = FASE.NORMAL;
+  estado.ubicacion = null;
+  estado.hechos = [];
+  estado.chicasActivas = estado.chica ? [estado.chica] : [];
+  estado.modo = 'libre';
+  estado.historiaId = null;
+  estado.outfitActual = null;
+  estado.accionActual = null;
+  estado.relacion = RELACION.DESCONOCIDA;
+  estado.mensajesCount = 0;
+  estado.ultimoMensajeUsuario = null;
 }
+
 export function volverAlSelector() {
-  estado.chica = null; estado.chicasActivas = []; estado.historial = []; estado.fase = FASE.NORMAL;
-  estado.ubicacion = null; estado.hechos = []; estado.modo = 'libre'; estado.historiaId = null; estado.outfitActual = null; estado.accionActual = null;
+  estado.chica = null;
+  estado.chicasActivas = [];
+  estado.historial = [];
+  estado.fase = FASE.NORMAL;
+  estado.ubicacion = null;
+  estado.hechos = [];
+  estado.modo = 'libre';
+  estado.historiaId = null;
+  estado.outfitActual = null;
+  estado.accionActual = null;
+  estado.relacion = RELACION.DESCONOCIDA;
+  estado.mensajesCount = 0;
+  estado.ultimoMensajeUsuario = null;
 }
+
 export { getChicasDisponibles, getImagenSelector, getDescripcionChica, listarTags };
