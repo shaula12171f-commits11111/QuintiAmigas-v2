@@ -1,7 +1,7 @@
 // ============================================================
 //  Motor principal - QuintiAmigas v2
-//  Tags: resolucion por especificidad (usuario > reglas > dinamico)
-//  + tagEngine estilo Nakardas (prioridad usuario > continuidad > bot)
+//  Tags: IA elige el tag principal (se usa de verdad)
+//  + tagEngine estilo Nakardas pasa a TESTING only
 //  + Estados de relacion automaticos + lugar actual (sugerencia vs orden)
 // ============================================================
 
@@ -675,7 +675,7 @@ function buscarTagEnPack(chica, claves, soloNoSex) {
   return null;
 }
 
-/** Elegir tag con motor Nakardas: usuario > continuidad > bot > modelo > hablando */
+/** TESTING ONLY — Motor Nakardas (ya no decide el tag real, solo se compara con la IA) */
 function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex, intencionUsuario = null) {
   const resultado = resolverTagEscena({
     chica,
@@ -799,25 +799,64 @@ export async function enviarMensaje(mensajeUsuario) {
 
   const partes = bloques.map((b) => {
     if (b.chica === 'Aldo') return { chica: 'Aldo', texto: b.texto, imagenUrl: '', audioUrl: '', descripcionImg: '', imagen_tag: '' };
-    const { elegido, razon, fuente } = elegirTag(b.chica, parsed.imagen_tag || '', b.texto, mensajeUsuario, ahoraSoloNoSex, intencion);
-    const media = resolverImagen(b.chica, elegido, soloMuestraUsuario ? false : ahoraSoloNoSex);
 
-    // Actualizar ropa según el tag REAL usado
+    // === NUEVO ORDEN: la IA decide el tag real ===
+    // 1. Tag propuesto por la IA (prioridad máxima)
+    let tagIA = normalizarTag(b.chica, parsed.imagen_tag || 'hablando', ahoraSoloNoSex);
+
+    // Seguridad mínima: si es escena no-sex, no permitir tags sexuales
+    if (ahoraSoloNoSex) {
+      const esMuestraTag = /usuario_muestra_su_verga|viendo_verga|ve_mi_verga|muestra_su_verga/i.test(tagIA);
+      if (!esMuestraTag && (esTagSex(tagIA) || /chup|foll|doggy|anal|cowgirl|mision|handjob|paja|oral|bola/i.test(tagIA))) {
+        tagIA = 'hablando';
+      }
+    }
+
+    // Coherencia de ropa (solo corrección suave, no cambia a otro sistema)
+    const ropa = getRopaChica(b.chica);
+    if (tagIncompatibleConRopa(tagIA, ropa.actual)) {
+      const alt = listarTags(b.chica).find(t =>
+        !tagIncompatibleConRopa(t, ropa.actual) &&
+        (ropa.actual === 'desnuda' ? /desnuda|hablando|mostrando_culo_sin/.test(t) : true)
+      );
+      if (alt) {
+        console.log('%c[ropa-fix]', 'color:#f59e0b', b.chica, tagIA, '→', alt, '(incompatible con ropa actual)');
+        tagIA = alt;
+      }
+    }
+
+    // Resolver imagen con el tag de la IA (este es el que se usa de verdad)
+    const media = resolverImagen(b.chica, tagIA, soloMuestraUsuario ? false : ahoraSoloNoSex);
+
+    // Actualizar ropa según el tag REAL usado (el de la IA)
     actualizarRopaDesdeTag(b.chica, media.tag, media.descripcion || '');
 
-    // === TESTING TAG (solo log, NO cambia la seleccion real) ===
+    // === TESTING ONLY: motor Nakardas (ya NO decide el tag real) ===
+    const nakardas = elegirTag(b.chica, parsed.imagen_tag || '', b.texto, mensajeUsuario, ahoraSoloNoSex, intencion);
+
+    // Testing log ampliado (IA vs Nakardas)
     razonarTagTestingIA(
       b.chica,
       mensajeUsuario,
       b.texto,
-      parsed.imagen_tag || '',
-      media.tag
+      parsed.imagen_tag || '',   // lo que propuso la IA originalmente
+      media.tag                 // lo que finalmente se usó (IA + fixes mínimos)
     );
+
+    // Log extra de comparación
+    console.log('%c[TESTING Nakardas vs IA]', 'color:#a78bfa', {
+      chica: b.chica,
+      tagIA_original: parsed.imagen_tag || '(ninguno)',
+      tagIA_usado: media.tag,
+      tagNakardas: nakardas.elegido,
+      razonNakardas: nakardas.razon,
+      coinciden: media.tag === nakardas.elegido ? 'SÍ' : 'NO'
+    });
 
     logGroup(`Tag → ${b.chica}`, {
       intencion: intencion ? intencion.label : '(ninguna)',
-      razon, fuente,
-      tagElegido: elegido, tagFinal: media.tag,
+      tagIA: media.tag,
+      tagNakardasTesting: nakardas.elegido,
       accionAnterior: estado.accionActual,
       ropaActual: getRopaChica(b.chica).actual,
       ropaAnterior: getRopaChica(b.chica).anterior
@@ -835,7 +874,7 @@ export async function enviarMensaje(mensajeUsuario) {
       imagenUrl: media.url,
       audioUrl: media.audio || '',
       descripcionImg: media.descripcion || '',
-      imagen_tag: media.tag || elegido
+      imagen_tag: media.tag
     };
   });
 
