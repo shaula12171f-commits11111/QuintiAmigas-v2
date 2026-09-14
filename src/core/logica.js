@@ -175,6 +175,42 @@ function actualizarRopaDesdeTag(chica, tag, descripcion = '') {
   return ropa;
 }
 
+
+/** Actualiza el estado de ropa a partir de lo que DECLARA el usuario (antes de generar respuesta) */
+function actualizarRopaDesdeMensajeUsuario(msg, chica) {
+  if (!chica || !msg) return;
+  const t = String(msg || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const ropa = getRopaChica(chica);
+
+  let nuevo = null;
+  // desnuda / sin ropa (prioridad alta)
+  if (/\b(desnuda|desnudate|desn[uú]date|sin ropa|quitate la ropa|quit[aá]te la ropa|te ves desnuda|est[aá]s desnuda|estas desnuda|ya desnuda|completamente desnuda)\b/.test(t)) {
+    nuevo = 'desnuda';
+  } else if (/\btanga\b/.test(t) && !/sin tanga|sin la tanga|quita(te)? la tanga/.test(t)) {
+    nuevo = 'tanga';
+  } else if (/\bbikini\b/.test(t)) {
+    nuevo = 'bikini';
+  } else if (/\b(lencer[ií]a|sujetador|encaje)\b/.test(t)) {
+    nuevo = 'lenceria';
+  } else if (/\b(vestida|con ropa|ponete la ropa|ponte la ropa|viste(te)?)\b/.test(t)) {
+    nuevo = 'vestida';
+  }
+
+  if (nuevo && nuevo !== ropa.actual) {
+    ropa.anterior = ropa.actual;
+    ropa.tagAnterior = ropa.tagActual;
+    ropa.actual = nuevo;
+    // tagActual se sincroniza después cuando se elija el tag real
+    log('Ropa forzada por mensaje usuario:', chica, ropa.anterior, '→', ropa.actual);
+    // Guardar en hechos para continuidad
+    const hecho = `${chica} está ${nuevo}`;
+    if (!estado.hechos.includes(hecho)) {
+      estado.hechos.push(hecho);
+      estado.hechos = estado.hechos.slice(-12);
+    }
+  }
+}
+
 /** Tags incoherentes con el estado de ropa actual */
 function tagIncompatibleConRopa(tag, ropaActual) {
   const t = String(tag || '').toLowerCase();
@@ -905,6 +941,9 @@ export async function enviarMensaje(mensajeUsuario) {
     if (!estado.chicasActivas.includes(n)) estado.chicasActivas.push(n);
   }
   actualizarFaseYLugar(mensajeUsuario);
+
+  // Forzar estado de ropa desde lo que declara el usuario (ANTES de armar el prompt)
+  actualizarRopaDesdeMensajeUsuario(mensajeUsuario, estado.chica);
 
   const soloMuestraUsuario = esSoloMuestra(mensajeUsuario);
   const escenaSex = !soloMuestraUsuario && (esEscenaSex() || PATRON_SEXO.test(mensajeUsuario));
