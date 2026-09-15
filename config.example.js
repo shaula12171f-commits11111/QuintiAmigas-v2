@@ -8,6 +8,6 @@ export const GROQ_KEYS = [
 
 export const MODELO = "openai/gpt-oss-120b"; // diálogo de las chicas
 
-export const MODELO_TAGS = "qwen/qwen3.6-27b"; // selector de tags (Qwen)
+export const MODELO_TAGS = "qwen/qwen3.8-27b"; // selector de tags (Qwen)
 
 export const NOMBRE_USUARIO_DEFAULT = "Fabrizio";
