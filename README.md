@@ -8,13 +8,15 @@ Chatbot de roleplay con las Quintillizas Nakano (y Emilia). Versión limpia basa
 - **Diálogos más sueltos**: las chicas hablan de forma más directa, vulgar y cachonda según su personalidad.
 - **Anti-censura reforzado**: system prompt y reintentos orientados a no romper el rol +18.
 - **Código más limpio**: menos estados frágiles, menos lógica amontonada en un solo archivo.
-- **API keys fuera del código**: se configuran en `config.js` (no subas keys reales al repo público).
+- **API keys en localStorage**: usá el botón **🔑 APIs** en la app (no las subas al repo público).
 
 ## Cómo usar
 
-1. Copia `config.example.js` → `config.js` y pon tus API keys de Groq.
-2. Abre `index.html` en un navegador moderno (o sirve la carpeta con un server local).
-3. Elige una chica y chatea.
+1. Abrí la app (GitHub Pages o `index.html` local).
+2. Tocá **🔑 Administrar API keys**, pegá tu key de Groq y una nota (ej. el correo).
+3. Elegí una chica y chatea.
+
+> `config.js` ya no debe tener keys reales. Solo modelos y nombre por defecto.
 
 ## Estructura
 
@@ -22,7 +24,7 @@ Chatbot de roleplay con las Quintillizas Nakano (y Emilia). Versión limpia basa
 src/
   core/           # motor y prompts
   characters/     # personalidades
-  systems/        # memoria ligera, imágenes, fallbacks
+  systems/        # apiKeys, imágenes, tags, etc.
 config.example.js
 index.html
 ```
