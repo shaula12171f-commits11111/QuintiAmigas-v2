@@ -16,7 +16,33 @@ let chicaActual = null, busy = false, activeAudioEl = null;
 
 function show(id) { screens.forEach((s) => $(s)?.classList.toggle('active', s === id)); }
 function stopAllAudio() {
-  if (activeAudioEl) { try { activeAudioEl.pause(); } catch (_) {} activeAudioEl = null; }
+  if (activeAudioEl) {
+    try { activeAudioEl.pause(); activeAudioEl.currentTime = 0; } catch (_) {}
+    activeAudioEl = null;
+  }
+  document.querySelectorAll('#msgs audio').forEach((a) => {
+    try { a.pause(); a.currentTime = 0; } catch (_) {}
+  });
+}
+/** Reproduce audios en secuencia (autoplay tras enviar mensaje = gesto de usuario). */
+async function playAudioSequence(audioEls) {
+  stopAllAudio();
+  for (const au of audioEls) {
+    if (!au || !au.src) continue;
+    activeAudioEl = au;
+    try {
+      au.loop = false;
+      au.currentTime = 0;
+      await au.play();
+      await new Promise((resolve) => {
+        const done = () => { au.removeEventListener('ended', done); resolve(); };
+        au.addEventListener('ended', done);
+        setTimeout(resolve, 60000);
+      });
+    } catch (e) {
+      console.warn('[Quinti] No se pudo autoplay audio:', e?.message || e);
+    }
+  }
 }
 function actualizarMeta(r) {
   if (!r) r = getEstado();
@@ -38,8 +64,18 @@ function addBotPart(part) {
   const body = document.createElement('div'); body.innerHTML = fmtText(part.texto); el.appendChild(body);
   if (part.imagenUrl) { const im = document.createElement('img'); im.className = 'scene'; im.src = part.imagenUrl; el.appendChild(im); }
   if (part.descripcionImg) { const c = document.createElement('div'); c.className = 'cap'; c.textContent = part.descripcionImg; el.appendChild(c); }
-  if (part.audioUrl) { const au = document.createElement('audio'); au.controls = true; au.src = part.audioUrl; el.appendChild(au); }
+  let audioEl = null;
+  if (part.audioUrl) {
+    const au = document.createElement('audio');
+    au.controls = true;
+    au.preload = 'auto';
+    au.loop = false;
+    au.src = part.audioUrl;
+    el.appendChild(au);
+    audioEl = au;
+  }
   $('msgs')?.appendChild(el); if ($('msgs')) $('msgs').scrollTop = $('msgs').scrollHeight;
+  return audioEl;
 }
 
 function openApiModal() { renderApiList(); $('api-overlay')?.classList.add('open'); }
@@ -125,8 +161,14 @@ if (grid) {
           item.onclick = async () => {
             chicaActual = nombre; $('msgs').innerHTML = ''; show('screen-chat');
             const r = await iniciarHistoria(nombre, h.id);
-            if (r?.partes) r.partes.forEach(addBotPart);
-            else if (r?.texto) addBotPart({ chica: nombre, texto: r.texto, imagenUrl: r.imagenUrl, audioUrl: r.audioUrl, descripcionImg: r.descripcionImg, imagen_tag: r.imagen_tag });
+            const audioEls = [];
+            if (r?.partes) {
+              for (const p of r.partes) { const au = addBotPart(p); if (au) audioEls.push(au); }
+            } else if (r?.texto) {
+              const au = addBotPart({ chica: nombre, texto: r.texto, imagenUrl: r.imagenUrl, audioUrl: r.audioUrl, descripcionImg: r.descripcionImg, imagen_tag: r.imagen_tag });
+              if (au) audioEls.push(au);
+            }
+            if (audioEls.length) playAudioSequence(audioEls);
             actualizarMeta(r||getEstado());
           };
           lista.appendChild(item);
@@ -155,7 +197,11 @@ async function send() {
   try {
     const r = await enviarMensaje(text);
     const partes = r.partes || [{ chica: r.chica||chicaActual, texto: r.texto, imagenUrl: r.imagenUrl, audioUrl: r.audioUrl, descripcionImg: r.descripcionImg, imagen_tag: r.imagen_tag }];
-    partes.forEach(addBotPart); actualizarMeta(r);
+    stopAllAudio();
+    const audioEls = [];
+    for (const p of partes) { const au = addBotPart(p); if (au) audioEls.push(au); }
+    if (audioEls.length) playAudioSequence(audioEls);
+    actualizarMeta(r);
   } catch (e) {
     console.error(e); addBotPart({ chica: 'Sistema', texto: 'Error: '+e.message });
   } finally { busy = false; if ($('send')) $('send').disabled = false; input?.focus(); }
@@ -168,7 +214,11 @@ if ($('btn-refresh')) $('btn-refresh').onclick = async () => {
     const r = await regenerarUltimaRespuesta(); if (!r) return;
     const last = [...($('msgs')?.querySelectorAll('.msg.bot')||[])].pop(); if (last) last.remove();
     const partes = r.partes || [{ chica: r.chica||chicaActual, texto: r.texto, imagenUrl: r.imagenUrl, audioUrl: r.audioUrl, descripcionImg: r.descripcionImg, imagen_tag: r.imagen_tag }];
-    partes.forEach(addBotPart); actualizarMeta(r);
+    stopAllAudio();
+    const audioEls = [];
+    for (const p of partes) { const au = addBotPart(p); if (au) audioEls.push(au); }
+    if (audioEls.length) playAudioSequence(audioEls);
+    actualizarMeta(r);
   } catch(e) { addBotPart({ chica:'Sistema', texto:'Error: '+e.message }); }
   finally { busy = false; }
 };
