@@ -653,16 +653,45 @@ function extraerHechos() {
   estado.hechos = [...new Set(estado.hechos)].slice(-12);
 }
 
+function enmascararKey(key) {
+  const k = String(key || '');
+  if (k.length < 12) return '(muy corta/vacía)';
+  return k.slice(0, 7) + '…' + k.slice(-4);
+}
+
 async function llamarGroq(messages, opts = {}) {
   if (!GROQ_KEYS?.length) throw new Error('Configura tus API keys en config.js');
   const model = opts.model || MODELO || 'llama-3.3-70b-versatile';
   const temperature = opts.temperature ?? 1.05;
   const max_tokens = opts.max_tokens ?? 1600;
+  const proposito = opts.proposito || 'chat';
   let ultimoError = null;
-  for (let i = 0; i < GROQ_KEYS.length; i++) {
-    const key = GROQ_KEYS[(estado.keyIndex + i) % GROQ_KEYS.length];
-    if (!key || key.includes('TU_KEY')) continue;
+  const totalKeys = GROQ_KEYS.length;
+  const intentosLog = [];
+
+  console.log(
+    `%c[Groq] Inicio llamada (${proposito}) | modelo=${model} | keys en config=${totalKeys} | keyIndex actual=${estado.keyIndex}`,
+    'color:#38bdf8;font-weight:bold'
+  );
+
+  for (let i = 0; i < totalKeys; i++) {
+    const ordenAbsoluto = (estado.keyIndex + i) % totalKeys; // 0-based en el array
+    const numeroOrden = ordenAbsoluto + 1; // 1-based para humanos
+    const key = GROQ_KEYS[ordenAbsoluto];
+    const mascara = enmascararKey(key);
+
+    if (!key || !String(key).trim() || String(key).includes('TU_KEY') || String(key).includes('YOUR_KEY') || String(key).includes('gsk_xxx')) {
+      const msg = `Key #${numeroOrden}/${totalKeys} (${mascara}) SALTADA: placeholder o vacía`;
+      intentosLog.push(msg);
+      console.warn('%c[Groq] ' + msg, 'color:#fbbf24');
+      continue;
+    }
+
     try {
+      console.log(
+        `%c[Groq] Probando key #${numeroOrden}/${totalKeys} → ${mascara} (${proposito})`,
+        'color:#a78bfa'
+      );
       const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -676,13 +705,48 @@ async function llamarGroq(messages, opts = {}) {
           ...(opts.reasoning_format ? { reasoning_format: opts.reasoning_format } : {})
         })
       });
-      if (!res.ok) throw new Error(`Groq ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      if (!res.ok) {
+        const body = (await res.text()).slice(0, 300);
+        const errMsg = `Groq ${res.status}: ${body}`;
+        intentosLog.push(`Key #${numeroOrden}/${totalKeys} (${mascara}) FALLÓ → ${res.status}`);
+        console.error(
+          `%c[Groq] ✗ Key #${numeroOrden}/${totalKeys} FALLÓ | ${mascara} | status=${res.status}`,
+          'color:#f87171;font-weight:bold',
+          body
+        );
+        throw new Error(errMsg);
+      }
       const data = await res.json();
-      estado.keyIndex = (estado.keyIndex + i) % GROQ_KEYS.length;
+      estado.keyIndex = ordenAbsoluto;
+      intentosLog.push(`Key #${numeroOrden}/${totalKeys} (${mascara}) OK`);
+      console.log(
+        `%c[Groq] ✓ Key #${numeroOrden}/${totalKeys} OK | ${mascara} | modelo=${model} | (${proposito})`,
+        'color:#34d399;font-weight:bold'
+      );
       return data.choices?.[0]?.message?.content || '';
-    } catch (e) { ultimoError = e; }
+    } catch (e) {
+      ultimoError = e;
+      if (!String(e?.message || '').startsWith('Groq ')) {
+        intentosLog.push(`Key #${numeroOrden}/${totalKeys} (${mascara}) ERROR RED → ${e.message}`);
+        console.error(
+          `%c[Groq] ✗ Key #${numeroOrden}/${totalKeys} ERROR DE RED/OTRO | ${mascara}`,
+          'color:#f87171;font-weight:bold',
+          e
+        );
+      }
+    }
   }
-  throw ultimoError || new Error('Falló la API');
+
+  console.error(
+    '%c[Groq] ===== TODAS LAS KEYS FALLARON =====',
+    'color:#f87171;font-weight:bold;font-size:13px'
+  );
+  intentosLog.forEach((l, idx) => console.error(`  ${idx + 1}. ${l}`));
+  console.error(
+    `%c[Groq] Resumen: ${totalKeys} key(s) en GROQ_KEYS | propósito=${proposito} | modelo=${model}`,
+    'color:#f87171'
+  );
+  throw ultimoError || new Error('Falló la API (todas las keys)');
 }
 
 function parseJsonRespuesta(raw) {
@@ -829,7 +893,8 @@ Respondé solo el tag:`;
         temperature: 0.2,
         max_tokens: 60,
         reasoning_effort: 'none',
-        reasoning_format: 'hidden'
+        reasoning_format: 'hidden',
+        proposito: 'selector-tags (MODELO_TAGS)'
       }
     );
 
@@ -881,7 +946,8 @@ Respondé solo el tag:`;
 
     return { tag, razon: `qwen:${String(raw || '').slice(0, 80).replace(/\n/g, ' ')}`, fuente: 'qwen' };
   } catch (e) {
-    console.error('[Qwen tag] Error:', e);
+    console.error('%c[Qwen tag] Error (selector de tags / MODELO_TAGS)', 'color:#f87171;font-weight:bold', e);
+    console.error('[Qwen tag] Revisá en el log [Groq] de arriba qué key # falló y el status (401 = API key inválida).');
     return { tag: 'hablando', razon: `qwen_error:${e.message}`, fuente: 'qwen_error' };
   }
 }
@@ -989,7 +1055,7 @@ export async function enviarMensaje(mensajeUsuario) {
     ...estado.historial.slice(-MAX_HISTORIAL).map((h) => ({ role: h.role, content: h.content })),
     { role: 'user', content: mensajeUsuario }
   ];
-  let raw = await llamarGroq(messages);
+  let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)' });
   let parsed = parseJsonRespuesta(raw);
   if (!parsed) {
     for (const extra of PROMPTS_REINTENTO) {
@@ -999,7 +1065,7 @@ export async function enviarMensaje(mensajeUsuario) {
         { role: 'user', content: mensajeUsuario },
         { role: 'assistant', content: raw || '' },
         { role: 'user', content: 'Corrige SOLO JSON.' }
-      ]);
+      ], { proposito: 'reintento-JSON (MODELO)' });
       parsed = parseJsonRespuesta(raw);
       if (parsed) break;
     }
