@@ -223,8 +223,148 @@ if ($('btn-refresh')) $('btn-refresh').onclick = async () => {
   finally { busy = false; }
 };
 
-if ($('btn-guardar-mem')) $('btn-guardar-mem').onclick = () => alert('Memorias: próxima versión compacta');
-if ($('btn-memorias')) $('btn-memorias').onclick = () => $('mem-overlay')?.classList.add('open');
-if ($('btn-cerrar-mem')) $('btn-cerrar-mem').onclick = () => $('mem-overlay')?.classList.remove('open');
+// ── Memorias ──────────────────────────────────────────────
+const MEM_KEY = 'quinti_memorias_v1';
 
-console.log('%c[Quinti] OK — Entrar y APIs deberían funcionar', 'color:#34d399;font-weight:bold');
+function loadAllMemorias() {
+  try { return JSON.parse(localStorage.getItem(MEM_KEY) || '{}'); }
+  catch { return {}; }
+}
+function saveAllMemorias(all) {
+  try { localStorage.setItem(MEM_KEY, JSON.stringify(all)); } catch (_) {}
+}
+
+function guardarMemoriaActual() {
+  const st = getEstado();
+  if (!st?.chica) {
+    alert('No hay chat activo para guardar.');
+    return;
+  }
+  const defaultName = `${st.chica} · ${new Date().toLocaleString('es')}`;
+  const nombre = prompt('Nombre de la memoria:', defaultName);
+  if (nombre === null) return;
+  const nombreFinal = (nombre || '').trim() || defaultName;
+
+  const msgs = [...($('msgs')?.querySelectorAll('.msg') || [])].map((el) => ({
+    tipo: el.classList.contains('user') ? 'user' : 'bot',
+    html: el.innerHTML
+  }));
+
+  const all = loadAllMemorias();
+  if (!all[st.chica]) all[st.chica] = [];
+  all[st.chica].unshift({
+    id: 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    nombre: nombreFinal,
+    fecha: Date.now(),
+    estado: exportarEstadoCompleto(),
+    mensajesVisuales: msgs
+  });
+  all[st.chica] = all[st.chica].slice(0, 30);
+  saveAllMemorias(all);
+  alert('Memoria guardada: ' + nombreFinal);
+}
+
+function cargarMemoria(chica, id) {
+  const m = (loadAllMemorias()[chica] || []).find((x) => x.id === id);
+  if (!m) {
+    alert('Memoria no encontrada');
+    return;
+  }
+  try {
+    restaurarEstadoCompleto(m.estado);
+  } catch (e) {
+    console.error(e);
+    alert('No se pudo restaurar el estado: ' + (e.message || e));
+    return;
+  }
+  chicaActual = chica;
+  if ($('msgs')) $('msgs').innerHTML = '';
+  for (const msg of (m.mensajesVisuales || [])) {
+    const el = document.createElement('div');
+    el.className = 'msg ' + (msg.tipo === 'user' ? 'user' : 'bot');
+    el.innerHTML = msg.html || '';
+    $('msgs')?.appendChild(el);
+  }
+  if ($('msgs')) $('msgs').scrollTop = $('msgs').scrollHeight;
+  show('screen-chat');
+  actualizarMeta(getEstado());
+  cerrarMemorias();
+}
+
+function eliminarMemoria(chica, id) {
+  if (!confirm('¿Borrar esta memoria?')) return;
+  const all = loadAllMemorias();
+  all[chica] = (all[chica] || []).filter((x) => x.id !== id);
+  saveAllMemorias(all);
+  renderMemoriasPanel();
+}
+
+function renderMemoriasPanel() {
+  const body = $('mem-body');
+  if (!body) return;
+  const all = loadAllMemorias();
+  let html = '';
+  let tiene = false;
+
+  for (const chica of getChicasDisponibles()) {
+    const lista = all[chica] || [];
+    if (!lista.length) continue;
+    tiene = true;
+    html += `<div class="mem-chica-section"><h3 style="color:var(--gold);margin:12px 0 8px;border-bottom:1px solid var(--line-dim);padding-bottom:4px">${chica} (${lista.length})</h3>`;
+    for (const m of lista) {
+      const fechaStr = new Date(m.fecha).toLocaleString('es');
+      const cant = (m.mensajesVisuales || []).length;
+      const rel = m.estado?.relacion || '—';
+      const fase = m.estado?.fase || '—';
+      html += `
+        <div class="mem-item">
+          <div class="info">
+            <strong>${escapeHtml(m.nombre)}</strong>
+            <small>${fechaStr} · ${cant} msgs · fase: ${fase} · relación: ${rel}</small>
+          </div>
+          <div class="actions">
+            <button class="btn sm" data-cargar="${chica}|${m.id}">Cargar</button>
+            <button class="btn sm danger" data-borrar="${chica}|${m.id}">Borrar</button>
+          </div>
+        </div>`;
+    }
+    html += '</div>';
+  }
+
+  if (!tiene) {
+    html = '<p class="mem-empty">No hay memorias guardadas todavía.<br>Entrá a un chat y tocá <strong>💾 Guardar</strong>.</p>';
+  }
+  body.innerHTML = html;
+
+  body.querySelectorAll('[data-cargar]').forEach((btn) => {
+    btn.onclick = () => {
+      const [chica, id] = btn.getAttribute('data-cargar').split('|');
+      cargarMemoria(chica, id);
+    };
+  });
+  body.querySelectorAll('[data-borrar]').forEach((btn) => {
+    btn.onclick = () => {
+      const [chica, id] = btn.getAttribute('data-borrar').split('|');
+      eliminarMemoria(chica, id);
+    };
+  });
+}
+
+function abrirMemorias() {
+  renderMemoriasPanel();
+  $('mem-overlay')?.classList.add('open');
+}
+function cerrarMemorias() {
+  $('mem-overlay')?.classList.remove('open');
+}
+
+if ($('btn-guardar-mem')) $('btn-guardar-mem').onclick = guardarMemoriaActual;
+if ($('btn-memorias')) $('btn-memorias').onclick = abrirMemorias;
+if ($('btn-cerrar-mem')) $('btn-cerrar-mem').onclick = cerrarMemorias;
+if ($('mem-overlay')) {
+  $('mem-overlay').addEventListener('click', (e) => {
+    if (e.target === $('mem-overlay')) cerrarMemorias();
+  });
+}
+
+console.log('%c[Quinti] OK — APIs + audio + memorias', 'color:#34d399;font-weight:bold');
