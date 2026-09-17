@@ -859,31 +859,92 @@ function buscarTagEnPack(chica, claves, soloNoSex) {
  * Recibe mensaje usuario + texto de la chica + tags reales de imagenes.js + ropa.
  * Devuelve el tag más coherente.
  */
-async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = false) {
+async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = false, accionAnterior = null) {
   const tags = soloNoSex ? listarTagsNoSex(chica) : listarTags(chica);
   if (!tags.length) return { tag: 'hablando', razon: 'sin_tags', fuente: 'qwen' };
 
   const ropa = getRopaChica(chica);
   const listaTags = tags.join(', ');
+  const msg = String(mensajeUsuario || '').trim();
+  const msgLower = msg.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+
+  // ¿El usuario solo está diciendo que se corre? (mensaje corto de eyaculación)
+  const soloCorriendose = /^(me\s*corro|me\s*vine|eyacul[oó]|me\s*sal[ií][oó]|acabo|cum|me\s*corr[ií]|ya\s*me\s*corr[ií]|me\s*corr[ií]\.?)$/i.test(msg.trim())
+    || (/^(me\s*corro|eyacul|me\s*vine|acabo|cum)\b/.test(msgLower) && msg.length < 40 && !/assjob|titjob|paizuri|nalgas|tetas|boca|cara|culo|oral|handjob|paja|doggy|anal/.test(msgLower));
+
+  // Mapa de familia de acción → preferencia de tag de corrida
+  function familiaDeTag(tag) {
+    const t = String(tag || '').toLowerCase();
+    if (/assjob|entre.*nalga|frot.*culo|culo.?job/.test(t)) return 'assjob';
+    if (/paizuri|titjob|tit.?job|tetas|entre.*tetas/.test(t)) return 'paizuri';
+    if (/handjob|paja/.test(t)) return 'handjob';
+    if (/chup|oral|mam|boca|deepthroat|69/.test(t)) return 'oral';
+    if (/anal|ano/.test(t)) return 'anal';
+    if (/doggy|mision|cowgirl|sidefuck|standfuck|follando|penetr/.test(t)) return 'penetracion';
+    if (/cara|facial/.test(t)) return 'facial';
+    return null;
+  }
+
+  function buscarTagCorridaParaFamilia(familia) {
+    if (!familia) return null;
+    const candidatos = tags.filter(t => /se_corre|usuario_se_corre|cumming|_cum|corrida|eyacul/.test(t.toLowerCase()));
+    if (familia === 'assjob') {
+      return candidatos.find(t => /assjob|nalga|culo.?job/.test(t.toLowerCase())) || null;
+    }
+    if (familia === 'paizuri') {
+      return candidatos.find(t => /paizuri|titjob|tit.?job|tetas/.test(t.toLowerCase())) || null;
+    }
+    if (familia === 'handjob') {
+      return candidatos.find(t => /handjob|paja/.test(t.toLowerCase())) || null;
+    }
+    if (familia === 'oral') {
+      return candidatos.find(t => /boca|oral|chup|69/.test(t.toLowerCase())) || null;
+    }
+    if (familia === 'anal') {
+      return candidatos.find(t => /anal/.test(t.toLowerCase())) || null;
+    }
+    if (familia === 'penetracion') {
+      return candidatos.find(t => /doggy|mision|cowgirl|foll|penetr|creampie/.test(t.toLowerCase())) || null;
+    }
+    if (familia === 'facial') {
+      return candidatos.find(t => /cara|facial/.test(t.toLowerCase())) || null;
+    }
+    return null;
+  }
+
+  // CORRECCIÓN LOCAL PRIORITARIA: si solo dice "me corro" y hay acción anterior, forzar familia correcta
+  if (soloCorriendose && accionAnterior) {
+    const fam = familiaDeTag(accionAnterior);
+    const tagCorrida = buscarTagCorridaParaFamilia(fam);
+    if (tagCorrida) {
+      log('Qwen override local (me corro + accionAnterior):', accionAnterior, '→', tagCorrida);
+      return {
+        tag: normalizarTag(chica, tagCorrida, soloNoSex),
+        razon: `local:me_corro+continidad(${accionAnterior}→${tagCorrida})`,
+        fuente: 'qwen_local_override'
+      };
+    }
+  }
 
   const system = `Sos un selector de tags de imagen para roleplay erótico.
-Se te da el mensaje del usuario, la respuesta de la chica, el estado de ropa y la lista REAL de tags disponibles.
+Se te da el mensaje del usuario, la respuesta de la chica, la ACCIÓN ANTERIOR, el estado de ropa y la lista REAL de tags disponibles.
 Debés elegir UN solo tag de esa lista que mejor represente la escena.
 
-Reglas estrictas:
-- SOLO podés elegir un tag que esté en la lista. No inventes tags.
-- Prestá atención a la zona del cuerpo (culo, ano, coño, tetas, boca, etc.).
-- Prestá atención a si hay penetración, solo roce, oral, etc.
-- Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
-- Si el usuario solo muestra la verga, usá un tag de muestra de verga si existe.
-- Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
+Reglas estrictas (prioridad de arriba hacia abajo):
+1) CONTINUIDAD: Si hay ACCIÓN ANTERIOR y el usuario solo dice "me corro" / "eyacula" / "me vine" (sin cambiar de posición), DEBES elegir el tag de CORRIDA de ESA MISMA acción (ej: si anterior era paizuri/titjob → paizuri_tit_job_usuario_se_corre; si era assjob → nino_hace_assjob_usuario_se_corre). NUNCA cambies de familia (tetas↔culo) solo porque dice "me corro".
+2) Si el usuario menciona explícitamente otra zona (assjob, nalgas, tetas, boca, cara, etc.), ahí sí podés cambiar.
+3) SOLO podés elegir un tag que esté en la lista. No inventes tags.
+4) Prestá atención a la zona del cuerpo (culo, ano, coño, tetas, boca, etc.).
+5) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
+6) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
 
   const user = `CHICA: ${chica}
+ACCIÓN ANTERIOR (muy importante para continuidad): ${accionAnterior || 'ninguna'}
 ROPA ACTUAL: ${ropa.actual || 'desconocida'}
 ROPA ANTERIOR: ${ropa.anterior || '—'}
 
 MENSAJE DEL USUARIO:
-"""${String(mensajeUsuario || '').slice(0, 800)}"""
+"""${msg.slice(0, 800)}"""
 
 RESPUESTA DE LA CHICA:
 """${String(textoBot || '').slice(0, 1200)}"""
@@ -902,7 +963,7 @@ Respondé solo el tag:`;
       ],
       {
         model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : 'qwen/qwen3.6-27b',
-        temperature: 0.2,
+        temperature: 0.15,
         max_tokens: 60,
         reasoning_effort: 'none',
         reasoning_format: 'hidden',
@@ -939,6 +1000,19 @@ Respondé solo el tag:`;
     }
 
     tag = normalizarTag(chica, tag, soloNoSex);
+
+    // Segunda corrección: si Qwen igual se fue a otra familia de corrida, forzar la de la acción anterior
+    if (soloCorriendose && accionAnterior) {
+      const famAnterior = familiaDeTag(accionAnterior);
+      const famElegida = familiaDeTag(tag);
+      if (famAnterior && famElegida && famAnterior !== famElegida) {
+        const corregido = buscarTagCorridaParaFamilia(famAnterior);
+        if (corregido) {
+          log('Qwen post-fix familia corrida:', tag, '→', corregido, `(anterior=${accionAnterior})`);
+          tag = normalizarTag(chica, corregido, soloNoSex);
+        }
+      }
+    }
 
     if (soloNoSex) {
       const esMuestra = /usuario_muestra_su_verga|viendo_verga|ve_mi_verga|muestra_su_verga/i.test(tag);
@@ -1099,7 +1173,7 @@ export async function enviarMensaje(mensajeUsuario) {
     }
 
     // === TAG REAL: Qwen elige ===
-    const qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex);
+    const qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex, estado.accionActual);
     let tagFinal = qwen.tag || 'hablando';
 
     // Resolver imagen con el tag de Qwen (este es el que se usa de verdad)
