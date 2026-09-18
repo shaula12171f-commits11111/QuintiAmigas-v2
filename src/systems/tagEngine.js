@@ -144,6 +144,17 @@ const PATRONES_CAMBIAR = [
 
 const PALABRAS_ACCION_CLARA = /\b(nalgue|nalga|cachetad|azote|pego|agarr|apriet|manose|chup|mam[ao]|lam[ei]|foll|cog|met[eo]|bes[ao]|desnud|muestro|saco|paja|handjob|doggy|mision|cowgirl|anal|corro|semen|cum)\b/i;
 
+
+/** True si el texto es pregunta/sugerencia y no una orden de acto sexual. */
+export function esTextoSugerencia(texto) {
+  const m = String(texto || '').trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!m) return false;
+  if (/\b(follame|cogeme|chupame|mamame|hacelo|hazlo|metela|me corro|eyacul|assjob|titjob|paizuri)\b/.test(m)) return false;
+  const esPregunta = /\?|¿/.test(texto) || /^(que|qué|como|cómo|cual|cuál)\b/.test(m);
+  const esPref = /\b(quer[eé]s|prefer[ií]s|te gustar[ií]a|en que posici[oó]n|qu[eé] posici[oó]n|te prender[ií]a)\b/.test(m);
+  return esPregunta || esPref;
+}
+
 function norm(s) {
   return String(s || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
 }
@@ -180,6 +191,9 @@ function tokenApareceEnMensaje(token, msgNorm) {
 export function matchContraTagsReales(mensaje, tagsDisponibles) {
   if (!mensaje || !tagsDisponibles?.length) {
     return { tag: null, puntuacion: 0, detalle: null };
+  }
+  if (esTextoSugerencia(mensaje)) {
+    return { tag: null, puntuacion: 0, detalle: 'sugerencia' };
   }
 
   const msgNorm = norm(mensaje).replace(/_/g, ' ');
@@ -278,6 +292,9 @@ export function matchContraTagsReales(mensaje, tagsDisponibles) {
 export function detectarAccionEnTexto(texto, { umbral = UMBRAL } = {}) {
   if (!texto || !String(texto).trim()) {
     return { tag: null, puntuacion: 0, coincidencias: [] };
+  }
+  if (esTextoSugerencia(texto)) {
+    return { tag: null, puntuacion: 0, coincidencias: [], razon: 'sugerencia_sin_acto' };
   }
   const raw = String(texto);
   const lower = norm(raw);
