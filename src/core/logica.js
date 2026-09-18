@@ -90,6 +90,26 @@ function esSoloMuestra(mensaje) {
   return muestra && !pideActo;
 }
 
+/** Detecta si el mensaje es solo una pregunta/sugerencia (NO una orden ni escena en curso). */
+function esMensajeSugerencia(mensaje) {
+  const m = String(mensaje || '').trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!m) return false;
+  // Ordenes / situaciones actuales → NO es sugerencia
+  if (/\b(follame|cogeme|chupame|mamame|hacelo|hazlo|metela|meto|te la meto|ahora doggy|ahora anal|me corro|eyacul|assjob|titjob|paizuri|handjob)\b/.test(m)) {
+    return false;
+  }
+  if (/\b(estoy|estas|está|estamos|haciendo|follando|chupando|metiendo)\b/.test(m) && !/\?/.test(m)) {
+    // descripción de acto en presente sin pregunta
+    if (/\b(foll|chup|mam|penetr|doggy|anal|oral)\b/.test(m)) return false;
+  }
+  // Preguntas / preferencias
+  const esPregunta = /\?|¿/.test(mensaje) || /^(que|qué|como|cómo|cual|cuál|donde|dónde|por que|por qué)\b/.test(m);
+  const esPreferencia = /\b(quer[eé]s|prefer[ií]s|te gustar[ií]a|que te gusta|en que posici[oó]n|qu[eé] posici[oó]n|te prender[ií]a|elige|eleg[ií]|opci[oó]n)\b/.test(m);
+  const esHipotesis = /\b(si te|y si|podr[ií]amos|te animar[ií]as|te gustar[ií]a que)\b/.test(m);
+  return esPregunta || esPreferencia || esHipotesis;
+}
+
+
 function log(...args) { console.log('%c[Quinti]', 'color:#a78bfa;font-weight:bold', ...args); }
 function logGroup(title, obj) {
   console.groupCollapsed('%c[Quinti] ' + title, 'color:#a78bfa;font-weight:bold');
@@ -463,6 +483,40 @@ export function restaurarEstadoCompleto(snap) {
 
 export function setNombreUsuario(nombre) { if (nombre && nombre.trim()) estado.nombreUsuario = nombre.trim(); }
 export function getNombreUsuario() { return estado.nombreUsuario; }
+
+
+export async function iniciarChatLasCinco() {
+  const lasCinco = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki'];
+  estado.chica = 'Nino';
+  estado.chicasActivas = [...lasCinco];
+  estado.historial = [];
+  estado.fase = FASE.NORMAL;
+  estado.ubicacion = null;
+  estado.hechos = [];
+  estado.modo = 'multi5';
+  estado.historiaId = null;
+  estado.outfitActual = null;
+  estado.accionActual = null;
+  estado.relacion = RELACION.DESCONOCIDA;
+  estado.mensajesCount = 0;
+  estado.ultimoMensajeUsuario = null;
+  estado.ropaPorChica = {};
+  log('Chat con las 5 iniciado');
+  return {
+    chica: 'Nino',
+    chicasActivas: [...lasCinco],
+    fase: estado.fase,
+    relacion: estado.relacion,
+    partes: [{
+      chica: 'Sistema',
+      texto: 'Están las cinco: Ichika, Nino, Miku, Yotsuba e Itsuki. Escribí y ellas responden (cada una con su estilo).',
+      imagenUrl: '',
+      audioUrl: '',
+      descripcionImg: '',
+      imagen_tag: 'hablando'
+    }]
+  };
+}
 
 export function iniciarChatLibre(chica) {
   if (!existeChica(chica)) throw new Error('Chica no existe');
@@ -1173,7 +1227,14 @@ export async function enviarMensaje(mensajeUsuario) {
     }
 
     // === TAG REAL: Qwen elige ===
-    const qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex, estado.accionActual);
+    const esSugerencia = esMensajeSugerencia(mensajeUsuario);
+    let qwen;
+    if (esSugerencia) {
+      log('Mensaje es SUGERENCIA/pregunta → tag forzando hablando');
+      qwen = { tag: 'hablando', razon: 'sugerencia_no_acto', fuente: 'local_sugerencia' };
+    } else {
+      qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex, estado.accionActual);
+    }
     let tagFinal = qwen.tag || 'hablando';
 
     // Resolver imagen con el tag de Qwen (este es el que se usa de verdad)
