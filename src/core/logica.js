@@ -95,28 +95,55 @@ function esSoloMuestra(mensaje) {
 }
 
 /** Detecta si el mensaje es solo una pregunta/sugerencia (NO una orden ni escena en curso). */
-function esMensajeSugerencia(mensaje) {
+function esMensajeSugerencia(mensaje, { escenaSexualActiva = false } = {}) {
   const m = String(mensaje || '').trim().toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   if (!m) return false;
-  // Ordenes / situaciones actuales → NO es sugerencia
-  if (/\b(follame|cogeme|chupame|mamame|hacelo|hazlo|metela|meto|te la meto|ahora doggy|ahora anal|me corro|eyacul|assjob|titjob|paizuri|handjob)\b/.test(m)) {
+
+  // Si YA hay sexo en curso, casi nunca es "sugerencia": es dirty talk / feedback
+  // ("te gusta?", "te gusta perra?", "más rico?") → NO forzar hablando
+  if (escenaSexualActiva) {
+    // Solo tratar como sugerencia hipotética si pregunta por OTRA posición futura sin continuar el acto
+    const cambiaDeTema = /\b(despu[eé]s|m[aá]s\s*tarde|en\s*otro\s*momento|cuando\s*terminemos)\b/.test(m)
+      && /\b(posici[oó]n|prefer[ií]s|quer[eé]s\s+foll|te\s+gustar[ií]a)\b/.test(m);
+    return !!cambiaDeTema;
+  }
+
+  // Acto / orden / descripción de lo que está pasando → NO es sugerencia
+  if (/\b(follame|cogeme|chupame|mamame|hacelo|hazlo|metela|meto|te la meto|ahora doggy|ahora anal|me corro|eyacul|assjob|titjob|paizuri|handjob|dedos?|concha|co[nñ]o|chapoteo|meto\s*dedos|metiendo)\b/.test(m)) {
     return false;
   }
-  if (/\b(estoy|estas|está|estamos|haciendo|follando|chupando|metiendo)\b/.test(m) && !/\?/.test(m)) {
-    // descripción de acto en presente sin pregunta
-    if (/\b(foll|chup|mam|penetr|doggy|anal|oral)\b/.test(m)) return false;
+  if (/\b(estoy|estas|est[aá]s|estamos|haciendo|follando|chupando|metiendo)\b/.test(m) && !/\?/.test(m)) {
+    if (/\b(foll|chup|mam|penetr|doggy|anal|oral|dedo)\b/.test(m)) return false;
   }
-  // Preguntas / preferencias
-  const esPregunta = /\?|¿/.test(mensaje) || /^(que|qué|como|cómo|cual|cuál|donde|dónde|por que|por qué)\b/.test(m);
-  const esPreferencia = /\b(quer[eé]s|prefer[ií]s|te gustar[ií]a|que te gusta|en que posici[oó]n|qu[eé] posici[oó]n|te prender[ií]a|elige|eleg[ií]|opci[oó]n)\b/.test(m);
-  const esHipotesis = /\b(si te|y si|podr[ií]amos|te animar[ií]as|te gustar[ií]a que)\b/.test(m);
-  return esPregunta || esPreferencia || esHipotesis;
+
+  // Dirty talk durante/después de acto: "te gusta?", "te gusta puta/perra?" → NO sugerencia de escena nueva
+  if (/\bte\s+gusta\b/.test(m) && !/\b(posici[oó]n|doggy|misionero|anal|oral|follar)\b/.test(m)) {
+    return false;
+  }
+
+  // Preguntas / preferencias HIPOTÉTICAS (sin escena activa)
+  const esPreguntaPosicion = /\b(en\s+que\s+posici[oó]n|qu[eé]\s+posici[oó]n|prefer[ií]s|quer[eé]s\s+foll|c[oó]mo\s+quer[eé]s|qu[eé]\s+te\s+gustar[ií]a)\b/.test(m);
+  const esPreferencia = /\b(prefer[ií]s|te\s+gustar[ií]a|elige|eleg[ií]|opci[oó]n)\b/.test(m) && /\b(posici[oó]n|doggy|anal|oral|misionero)\b/.test(m);
+  const esHipotesis = /\b(y\s+si|podr[ií]amos|te\s+animar[ií]as|te\s+gustar[ií]a\s+que)\b/.test(m);
+
+  // Pregunta genérica sola ("¿cómo estás?") sin sexo → sí puede ser neutra, pero no forzamos hablando por eso
+  // Solo forzar hablando en sugerencias de ACTO sexual futuro
+  return esPreguntaPosicion || esPreferencia || esHipotesis;
+}
+
+function hayEscenaSexualActiva() {
+  if ((estado.turnosEnSexo || 0) > 0) return true;
+  const a = String(estado.accionActual || '').toLowerCase();
+  if (a && a !== 'hablando' && /doggy|mision|cowgirl|anal|chup|handjob|assjob|paizuri|foll|69|oral|paja|dedo|concha|sex|metiendo|sidefuck|standfuck/.test(a)) {
+    return true;
+  }
+  if (estado.fase === FASE.INTIMO) return true;
+  return false;
 }
 
 
-
 const CHICAS_ENOJO_RAPIDO = ['Nino', 'Ichika', 'Yotsuba'];
-const PATRON_SEXO_ACTIVO = /\b(foll|cog|chup|mam[ao]|oral|handjob|paja|assjob|paizuri|titjob|doggy|mision|cowgirl|anal|penetr|meto|metela|69|lam[ei]|deepthroat|entre (las )?nalgas|entre (las )?tetas)\b/i;
+const PATRON_SEXO_ACTIVO = /\b(foll|cog|chup|mam[ao]|oral|handjob|paja|assjob|paizuri|titjob|doggy|mision|cowgirl|anal|penetr|meto|metela|69|lam[ei]|deepthroat|entre (las )?nalgas|entre (las )?tetas|dedos?|concha|co[nñ]o|chapoteo|metiendo)\b/i;
 const PATRON_EYACULA = /\b(me\s*corr[oií]|me\s*vine|eyacul|acabo|me\s*sali[oó]|tiro\s*(semen|leche)|cum\b|finished)\b/i;
 
 function esActoSexualActivo(texto) {
@@ -1290,12 +1317,17 @@ export async function enviarMensaje(mensajeUsuario) {
     }
 
     // === TAG REAL: Qwen elige ===
-    const esSugerencia = esMensajeSugerencia(mensajeUsuario);
+    const escenaActiva = hayEscenaSexualActiva();
+    const esSugerencia = esMensajeSugerencia(mensajeUsuario, { escenaSexualActiva: escenaActiva });
     let qwen;
-    if (esSugerencia) {
-      log('Mensaje es SUGERENCIA/pregunta → tag forzando hablando');
+    // Solo forzar "hablando" si es sugerencia hipotética Y NO hay sexo ya ocurriendo
+    if (esSugerencia && !escenaActiva) {
+      log('Mensaje es SUGERENCIA/pregunta (sin escena activa) → tag forzando hablando');
       qwen = { tag: 'hablando', razon: 'sugerencia_no_acto', fuente: 'local_sugerencia' };
     } else {
+      if (esSugerencia && escenaActiva) {
+        log('Pregunta durante sexo activo → NO forzar hablando, mantener escena');
+      }
       qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex, estado.accionActual);
     }
     let tagFinal = qwen.tag || 'hablando';
