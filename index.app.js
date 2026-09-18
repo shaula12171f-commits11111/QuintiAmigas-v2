@@ -1,5 +1,5 @@
 import {
-  setNombreUsuario, iniciarChatLibre, iniciarHistoria, enviarMensaje,
+  setNombreUsuario, iniciarChatLibre, iniciarChatLasCinco, iniciarHistoria, enviarMensaje,
   regenerarUltimaRespuesta, resetChat, volverAlSelector, getEstado,
   getChicasDisponibles, exportarEstadoCompleto, restaurarEstadoCompleto
 } from './src/core/logica.js';
@@ -157,7 +157,7 @@ if (grid) {
         for (const h of (getHistorias(nombre)||[])) {
           const item = document.createElement('div');
           item.className = 'story-item';
-          item.innerHTML = `<strong>${h.titulo||h.id}</strong><span>${h.descripcion||''}</span>`;
+          item.innerHTML = `<strong>${h.nombre||h.titulo||h.id}</strong><span>${h.descripcion||''}</span>`;
           item.onclick = async () => {
             chicaActual = nombre; $('msgs').innerHTML = ''; show('screen-chat');
             const r = await iniciarHistoria(nombre, h.id);
@@ -179,6 +179,21 @@ if (grid) {
     grid.appendChild(card);
   }
 }
+
+
+if ($('btn-chat-las-5')) $('btn-chat-las-5').onclick = async () => {
+  chicaActual = 'Nino';
+  $('msgs').innerHTML = '';
+  show('screen-chat');
+  try {
+    const r = await iniciarChatLasCinco();
+    actualizarMeta(r || getEstado());
+    if ($('chat-who')) $('chat-who').textContent = 'Las 5';
+  } catch (e) {
+    console.error(e);
+    addBotPart({ chica: 'Sistema', texto: 'Error al iniciar chat de las 5: ' + e.message });
+  }
+};
 
 if ($('btn-chat-libre')) $('btn-chat-libre').onclick = async () => {
   if (!chicaActual) return;
