@@ -39,6 +39,12 @@ export const HISTORIAS = {
       nombre: 'Confesión caliente',
       descripcion: 'Por fin admite que le gustas... y se le va de las manos.',
       mensajeBienvenida: `*Nino está nerviosa, jugando con un lazo, las mejillas rojas*\n\n"Mira, {nombre}... hay algo que tengo que decirte." *respira hondo* "Me gustas, ¿okay? Me gustas mucho."\n\n*Da un paso y te toma las manos* "Y sé que soy insoportable, pero quiero intentarlo. ¿Tú qué decís? Porque si decís que sí... no pienso quedarme solo en un beso."`
+    },
+    {
+      id: 'nino_la_mas_culona',
+      nombre: 'Nino la más culona',
+      descripcion: 'Se cree (con razón) la de mejor culo de las cinco... y te lo demuestra.',
+      mensajeBienvenida: `*Nino está de espaldas frente al espejo del cuarto, mirándose el reflejo con una sonrisa arrogante. El short le marca cada curva*\n\n"¿Sabés por qué soy la más culona de las cinco, {nombre}?" *se gira un poco, te mira por encima del hombro y se da una palmada suave en una nalga* "Porque esto no es suerte. Es genética. Y es mío."\n\n*Camina hacia vos, lenta, y te pone la mano en el pecho* "Mis hermanas pueden pelear por la cara o las tetas... pero el culo es territorio Nino. ¿Vas a quedarte mirando o vas a hacer algo al respecto, idiota?"`
     }
   ],
   Miku: [
