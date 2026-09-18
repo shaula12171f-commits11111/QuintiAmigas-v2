@@ -61,7 +61,11 @@ let estado = {
   mensajesCount: 0,         // para progresion automatica de relacion
   ultimoMensajeUsuario: null, // para boton refresh
   // Ropa por chica: { [chica]: { actual, anterior, tagActual, tagAnterior } }
-  ropaPorChica: {}
+  ropaPorChica: {},
+  // Eyaculación rápida
+  turnosEnSexo: 0,           // turnos desde que empezó la escena sexual activa
+  eyaculacionRapida: false,  // true si se corrió en <= 2 turnos de sexo
+  ultimaEyaculacionRapida: false // se mantiene un turno para el prompt
 };
 
 const MAX_HISTORIAL = 20;
@@ -107,6 +111,52 @@ function esMensajeSugerencia(mensaje) {
   const esPreferencia = /\b(quer[eé]s|prefer[ií]s|te gustar[ií]a|que te gusta|en que posici[oó]n|qu[eé] posici[oó]n|te prender[ií]a|elige|eleg[ií]|opci[oó]n)\b/.test(m);
   const esHipotesis = /\b(si te|y si|podr[ií]amos|te animar[ií]as|te gustar[ií]a que)\b/.test(m);
   return esPregunta || esPreferencia || esHipotesis;
+}
+
+
+
+const CHICAS_ENOJO_RAPIDO = ['Nino', 'Ichika', 'Yotsuba'];
+const PATRON_SEXO_ACTIVO = /\b(foll|cog|chup|mam[ao]|oral|handjob|paja|assjob|paizuri|titjob|doggy|mision|cowgirl|anal|penetr|meto|metela|69|lam[ei]|deepthroat|entre (las )?nalgas|entre (las )?tetas)\b/i;
+const PATRON_EYACULA = /\b(me\s*corr[oií]|me\s*vine|eyacul|acabo|me\s*sali[oó]|tiro\s*(semen|leche)|cum\b|finished)\b/i;
+
+function esActoSexualActivo(texto) {
+  return PATRON_SEXO_ACTIVO.test(String(texto || ''));
+}
+
+function esMensajeEyaculacion(texto) {
+  return PATRON_EYACULA.test(String(texto || ''));
+}
+
+/** Actualiza contador de turnos de sexo y flag de eyaculación rápida. */
+function actualizarContadorSexoYEyaculacion(mensajeUsuario, tagUsado = null) {
+  const msg = String(mensajeUsuario || '');
+  const haySexo = esActoSexualActivo(msg) || (tagUsado && esTagSex && typeof esTagSex === 'function' && esTagSex(tagUsado))
+    || (tagUsado && /doggy|mision|cowgirl|anal|chup|handjob|assjob|paizuri|foll|69|oral|paja/i.test(String(tagUsado)));
+  const eyacula = esMensajeEyaculacion(msg);
+
+  if (eyacula) {
+    // Se corrió: evaluar rapidez ANTES de resetear
+    const rapido = (estado.turnosEnSexo > 0 && estado.turnosEnSexo <= 2)
+      || (estado.turnosEnSexo === 0 && haySexo); // se corrió en el mismo mensaje que empezó el acto
+    // Si no había contador pero había acción sexual previa en accionActual
+    const rapido2 = estado.turnosEnSexo <= 2 && (estado.turnosEnSexo >= 1 || !!estado.accionActual && /doggy|mision|cowgirl|anal|chup|handjob|assjob|paizuri|foll|69|oral|paja|sex/i.test(String(estado.accionActual||'')));
+    estado.eyaculacionRapida = rapido || rapido2 || (estado.turnosEnSexo > 0 && estado.turnosEnSexo <= 2);
+    // Si turnosEnSexo era 0 y solo dice "me corro" sin contexto sexual previo, no marcar
+    if (estado.turnosEnSexo === 0 && !estado.accionActual && !haySexo) {
+      estado.eyaculacionRapida = false;
+    }
+    estado.ultimaEyaculacionRapida = estado.eyaculacionRapida;
+    log('Eyaculación detectada. turnosEnSexo=', estado.turnosEnSexo, 'rapida=', estado.eyaculacionRapida);
+    // Después de corrida, reiniciar contador de escena
+    estado.turnosEnSexo = 0;
+    return;
+  }
+
+  if (haySexo) {
+    estado.turnosEnSexo = (estado.turnosEnSexo || 0) + 1;
+    estado.eyaculacionRapida = false;
+    log('Turno sexo #', estado.turnosEnSexo);
+  }
 }
 
 
@@ -685,6 +735,16 @@ function construirContexto(mensajeUsuarioActual = '') {
   if (mensajeUsuarioActual && esSoloMuestra(mensajeUsuarioActual)) {
     lineas.push('⚠️ Usuario SOLO muestra la verga. Reaccioná. PROHIBIDO chupar. tag=usuario_muestra_su_verga.');
   }
+  if (estado.ultimaEyaculacionRapida || estado.eyaculacionRapida) {
+    const ch = estado.chica || '';
+    if (CHICAS_ENOJO_RAPIDO.includes(ch)) {
+      lineas.push('⚠️ eyaculacion_rapida=true. Se corrió MUY PRONTO (pocos turnos de sexo). ' + ch + ' DEBE molestarse / burlarse / exigir más según su personalidad. No lo ignores.');
+    } else {
+      lineas.push('eyaculacion_rapida=true (se corrió pronto). Reaccioná acorde a tu personalidad.');
+    }
+  } else if (estado.turnosEnSexo > 0) {
+    lineas.push(`Turnos de sexo activo en esta escena: ${estado.turnosEnSexo}.`);
+  }
   if (estado.hechos.length) lineas.push('Hechos: ' + estado.hechos.slice(-8).join(' | '));
   if (estado.outfitActual?.descripcion) lineas.push('OUTFIT: ' + estado.outfitActual.descripcion);
   if (estado.chica) {
@@ -1142,6 +1202,9 @@ export async function enviarMensaje(mensajeUsuario) {
 
   estado.ultimoMensajeUsuario = mensajeUsuario;
 
+  // Contador de sexo + flag eyaculación rápida (Nino/Ichika/Yotsuba)
+  actualizarContadorSexoYEyaculacion(mensajeUsuario, estado.accionActual);
+
   const enContexto = detectarPersonajesEnContexto(mensajeUsuario);
   for (const n of enContexto) {
     if (!estado.chicasActivas.includes(n)) estado.chicasActivas.push(n);
@@ -1301,6 +1364,9 @@ export async function enviarMensaje(mensajeUsuario) {
   }
 
   estado.historial.push({ role: 'user', content: mensajeUsuario });
+  // El flag ya se usó en el prompt de este turno
+  estado.ultimaEyaculacionRapida = false;
+  estado.eyaculacionRapida = false;
   estado.historial.push({ role: 'assistant', content: parsed.respuesta });
   if (estado.historial.length > MAX_HISTORIAL * 2) estado.historial = estado.historial.slice(-MAX_HISTORIAL * 2);
 
@@ -1357,6 +1423,9 @@ export function resetChat() {
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
+  estado.turnosEnSexo = 0;
+  estado.eyaculacionRapida = false;
+  estado.ultimaEyaculacionRapida = false;
 }
 
 export function volverAlSelector() {
