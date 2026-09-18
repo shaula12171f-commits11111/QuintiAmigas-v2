@@ -21,6 +21,7 @@ h1{text-align:center;color:var(--accent);margin-bottom:8px;font-size:1.8rem}
 .btn.sm{padding:8px 12px;font-size:.85rem;border-radius:10px}
 .btn.danger{background:linear-gradient(135deg,#b91c1c,#ef4444)}
 .btn.mem-save{background:linear-gradient(135deg,#059669,#10b981)}
+.btn.multi{background:linear-gradient(135deg,#db2777,#f59e0b);margin-top:16px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:16px}
 .card-chica{background:var(--card);border:3px solid var(--line-dim);border-radius:18px;overflow:hidden;cursor:pointer;text-align:center}
 .card-chica:hover{border-color:var(--accent);transform:translateY(-4px)}
@@ -82,7 +83,12 @@ h1{text-align:center;color:var(--accent);margin-bottom:8px;font-size:1.8rem}
 <p class="hint" style="margin-top:12px">Las keys se guardan solo en este navegador (localStorage).</p>
 </div>
 </section>
-<section id="screen-select" class="screen"><h1>Elegí una chica</h1><p class="sub" id="saludo-nombre">Hola</p><div class="grid" id="grid-chicas"></div></section>
+<section id="screen-select" class="screen">
+<h1>Elegí una chica</h1>
+<p class="sub" id="saludo-nombre">Hola</p>
+<div class="grid" id="grid-chicas"></div>
+<button class="btn block multi" id="btn-chat-las-5">💜 Chat con las 5 (Ichika · Nino · Miku · Yotsuba · Itsuki)</button>
+</section>
 <section id="screen-modo" class="screen">
 <div class="modo-head"><img id="modo-avatar" alt=""/><div><h1 id="modo-nombre" style="text-align:left;margin:0">Nino</h1><p class="sub" id="modo-desc" style="text-align:left;margin:4px 0 0">...</p></div></div>
 <div class="modo-actions"><button class="btn block" id="btn-chat-libre">Chat libre</button><h3 style="color:var(--gold);margin-top:12px">Historias</h3><div class="story-list" id="lista-historias"></div><button class="btn ghost block" id="btn-volver-selector">← Volver al selector</button></div>
