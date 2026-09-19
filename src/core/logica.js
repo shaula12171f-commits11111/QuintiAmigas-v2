@@ -1010,6 +1010,57 @@ function buscarTagEnPack(chica, claves, soloNoSex) {
  * Recibe mensaje usuario + texto de la chica + tags reales de imagenes.js + ropa.
  * Devuelve el tag más coherente.
  */
+
+/** ¿El usuario es quien se corre? (no Aldo ni otro NPC) */
+function mensajeEsCorridaDelUsuario(mensaje) {
+  const m = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!m.trim()) return false;
+  // Corrida de otro personaje (Aldo, etc.) → NO es del usuario
+  if (/\b(aldo|el|otro)\s+se\s+corr/.test(m)) return false;
+  if (/\bse\s+corre\s+(en|sobre|dentro|a)\b/.test(m) && !/\b(me\s+corro|me\s+vine|eyacul[oó]|acabo)\b/.test(m)) {
+    // "se corre en la boca de ichika" sin "me corro" → no es el usuario
+    if (!/\bme\s+corr/.test(m)) return false;
+  }
+  return /\b(me\s*corro|me\s*vine|eyacul[oó]|me\s*sal[ií][oó]|acabo|cum\b|me\s*corr[ií])\b/.test(m);
+}
+
+/** ¿El mensaje describe una acción sexual entre otros (NPC→NPC), no del usuario? */
+function mensajeEsAccionEntreOtros(mensaje) {
+  const m = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!m.trim()) return false;
+  // Ej: "aldo se corre en la boca de ichika", "miku está follando con aldo"
+  const actores = ['aldo', 'ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'];
+  const mencionaActor = actores.some((a) => m.includes(a));
+  if (!mencionaActor) return false;
+  if (mensajeEsCorridaDelUsuario(mensaje)) return false;
+  // Acción sexual narrada sin que el usuario sea el sujeto
+  if (/\b(se\s+corre|se\s+la\s+chupa|follando|chupando|mamando|penetr)\b/.test(m)) {
+    // Si el sujeto es claramente otro
+    if (/\b(aldo|ichika|nino|miku|yotsuba|itsuki|emilia)\b/.test(m) && !/\b(me\s+corro|te\s+la\s+meto|te\s+foll)\b/.test(m)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Continuidad de corrida SOLO si:
+ * - el USUARIO es quien se corre, y
+ * - esta chica es con quien está el usuario ahora (chica principal o nombrada en el mensaje).
+ * No aplicar si el acto es de Aldo/otros sobre otra chica.
+ */
+function debeAplicarContinuidadCorrida(chica, mensajeUsuario) {
+  if (!mensajeEsCorridaDelUsuario(mensajeUsuario)) return false;
+  if (mensajeEsAccionEntreOtros(mensajeUsuario)) return false;
+  const m = String(mensajeUsuario || '').toLowerCase();
+  const nombre = String(chica || '').toLowerCase();
+  // Si nombra explícitamente a esta chica → sí
+  if (nombre && m.includes(nombre)) return true;
+  // Mensaje corto tipo "me corro" / "me corro en la cara" → solo la chica principal del chat
+  if (estado.chica && String(estado.chica).toLowerCase() === nombre) return true;
+  return false;
+}
+
 async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = false, accionAnterior = null) {
   const tags = soloNoSex ? listarTagsNoSex(chica) : listarTags(chica);
   if (!tags.length) return { tag: 'hablando', razon: 'sin_tags', fuente: 'qwen' };
@@ -1063,18 +1114,30 @@ async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = fal
     return null;
   }
 
-  // CORRECCIÓN LOCAL PRIORITARIA: si solo dice "me corro" y hay acción anterior, forzar familia correcta
-  if (soloCorriendose && accionAnterior) {
-    const fam = familiaDeTag(accionAnterior);
+  // Continuidad de corrida SOLO si el USUARIO se corre CON ESTA chica (no si Aldo se corre en otra)
+  const continuidadOk = debeAplicarContinuidadCorrida(chica, mensajeUsuario);
+  const accionParaContinuar = continuidadOk ? accionAnterior : null;
+
+  // CORRECCIÓN LOCAL PRIORITARIA: "me corro" + acción anterior de ESTA chica
+  if (soloCorriendose && accionParaContinuar && continuidadOk) {
+    const fam = familiaDeTag(accionParaContinuar);
     const tagCorrida = buscarTagCorridaParaFamilia(fam);
     if (tagCorrida) {
-      log('Qwen override local (me corro + accionAnterior):', accionAnterior, '→', tagCorrida);
+      log('Qwen override local (me corro + accionAnterior):', accionParaContinuar, '→', tagCorrida, '| chica=', chica);
       return {
         tag: normalizarTag(chica, tagCorrida, soloNoSex),
-        razon: `local:me_corro+continidad(${accionAnterior}→${tagCorrida})`,
+        razon: `local:me_corro+continidad(${accionParaContinuar}→${tagCorrida})`,
         fuente: 'qwen_local_override'
       };
     }
+  }
+
+  // Si el mensaje es acto entre otros (ej. Aldo→Ichika) y esta chica NO es la involucrada, no arrastrar tag sexual de continuidad
+  const accionEntreOtros = mensajeEsAccionEntreOtros(mensajeUsuario);
+  const chicaEnMensaje = String(mensajeUsuario || '').toLowerCase().includes(String(chica || '').toLowerCase());
+  if (accionEntreOtros && !chicaEnMensaje && !mensajeEsCorridaDelUsuario(mensajeUsuario)) {
+    // Nino mirando a Ichika+Aldo → reacción / hablando, no tag de corrida en su boca
+    log('Tag: acto entre otros, chica no involucrada → sin continuidad sexual', chica);
   }
 
   const system = `Sos un selector de tags de imagen para roleplay erótico.
@@ -1082,15 +1145,16 @@ Se te da el mensaje del usuario, la respuesta de la chica, la ACCIÓN ANTERIOR, 
 Debés elegir UN solo tag de esa lista que mejor represente la escena.
 
 Reglas estrictas (prioridad de arriba hacia abajo):
-1) CONTINUIDAD: Si hay ACCIÓN ANTERIOR y el usuario solo dice "me corro" / "eyacula" / "me vine" (sin cambiar de posición), DEBES elegir el tag de CORRIDA de ESA MISMA acción (ej: si anterior era paizuri/titjob → paizuri_tit_job_usuario_se_corre; si era assjob → nino_hace_assjob_usuario_se_corre). NUNCA cambies de familia (tetas↔culo) solo porque dice "me corro".
-2) Si el usuario menciona explícitamente otra zona (assjob, nalgas, tetas, boca, cara, etc.), ahí sí podés cambiar.
-3) SOLO podés elegir un tag que esté en la lista. No inventes tags.
-4) Prestá atención a la zona del cuerpo (culo, ano, coño, tetas, boca, etc.).
-5) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
-6) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
+1) CONTINUIDAD DE CORRIDA: Solo si el USUARIO se corre y la ACCIÓN ANTERIOR es de ESTA misma chica. Si el mensaje dice que OTRO (ej. Aldo) se corre en otra chica, IGNORÁ la acción anterior y elegí según el mensaje actual.
+2) Si esta chica NO está involucrada en el acto del mensaje (solo mira / se pone celosa), elegí tag de reacción o "hablando", NO tags de recibir semen / oral / facial.
+3) Si el usuario menciona explícitamente otra zona (assjob, nalgas, tetas, boca, cara, etc.) sobre ESTA chica, ahí sí cambiá.
+4) SOLO podés elegir un tag que esté en la lista. No inventes tags.
+5) Prestá atención a la zona del cuerpo y a QUIÉN recibe la acción.
+6) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
+7) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
 
   const user = `CHICA: ${chica}
-ACCIÓN ANTERIOR (muy importante para continuidad): ${accionAnterior || 'ninguna'}
+ACCIÓN ANTERIOR (solo si aplica a ESTA chica y el usuario se corre): ${accionParaContinuar || 'ninguna — no arrastrar de otra chica/otra escena'}
 ROPA ACTUAL: ${ropa.actual || 'desconocida'}
 ROPA ANTERIOR: ${ropa.anterior || '—'}
 
@@ -1152,16 +1216,25 @@ Respondé solo el tag:`;
 
     tag = normalizarTag(chica, tag, soloNoSex);
 
-    // Segunda corrección: si Qwen igual se fue a otra familia de corrida, forzar la de la acción anterior
-    if (soloCorriendose && accionAnterior) {
-      const famAnterior = familiaDeTag(accionAnterior);
+    // Segunda corrección: solo si continuidad aplica a ESTA chica
+    if (soloCorriendose && accionParaContinuar && continuidadOk) {
+      const famAnterior = familiaDeTag(accionParaContinuar);
       const famElegida = familiaDeTag(tag);
       if (famAnterior && famElegida && famAnterior !== famElegida) {
         const corregido = buscarTagCorridaParaFamilia(famAnterior);
         if (corregido) {
-          log('Qwen post-fix familia corrida:', tag, '→', corregido, `(anterior=${accionAnterior})`);
+          log('Qwen post-fix familia corrida:', tag, '→', corregido, `(anterior=${accionParaContinuar})`);
           tag = normalizarTag(chica, corregido, soloNoSex);
         }
+      }
+    }
+
+    // Si acto es entre otros y esta chica no está en el mensaje, evitar tags de recibir corrida/oral
+    if (accionEntreOtros && !chicaEnMensaje) {
+      if (/se_corre|usuario_se_corre|cumming|corrida|facial|boca|oral|chupando/i.test(tag)) {
+        const neutro = tags.find((t) => /^hablando$/i.test(t)) || tags.find((t) => /celos|mirando|enojada|hablando/i.test(t)) || 'hablando';
+        log('Tag corregido: chica no involucrada en acto ajeno', tag, '→', neutro);
+        tag = normalizarTag(chica, neutro, soloNoSex);
       }
     }
 
@@ -1446,8 +1519,12 @@ export async function enviarMensaje(mensajeUsuario) {
   const parteConDesc = partes.find((p) => p.descripcionImg?.trim());
   if (parteConDesc) estado.outfitActual = { chica: parteConDesc.chica, tag: parteConDesc.imagen_tag, descripcion: parteConDesc.descripcionImg.trim() };
 
+  // accionActual = continuidad del usuario CON su chica. No guardar actos solo entre NPCs (Aldo→Ichika).
   const tagPrincipal = partes.find((p) => p.chica !== 'Aldo' && p.imagen_tag)?.imagen_tag;
-  if (tagPrincipal && tagPrincipal !== 'hablando') {
+  if (mensajeEsAccionEntreOtros(mensajeUsuario) && !mensajeEsCorridaDelUsuario(mensajeUsuario)) {
+    // No pisar la acción usuario-chica con un acto ajeno; tampoco propagar a la próxima
+    log('accionActual: acto entre otros → no actualizar continuidad global');
+  } else if (tagPrincipal && tagPrincipal !== 'hablando') {
     estado.accionActual = tagPrincipal;
   } else if (!escenaSex) {
     const userAct = detectarAccionEnTexto(mensajeUsuario);
