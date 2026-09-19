@@ -1,6 +1,6 @@
 import {
   setNombreUsuario, iniciarChatLibre, iniciarChatLasCinco, iniciarHistoria, enviarMensaje,
-  regenerarUltimaRespuesta, resetChat, volverAlSelector, getEstado,
+  regenerarUltimaRespuesta, resetChat, volverAlSelector, getEstado, getResumenConversacion,
   getChicasDisponibles, exportarEstadoCompleto, restaurarEstadoCompleto
 } from './src/core/logica.js';
 import { ensureImagenesLoaded, getImagenSelector, getDescripcionChica } from './src/systems/imagenes.js';
@@ -373,9 +373,30 @@ function cerrarMemorias() {
   $('mem-overlay')?.classList.remove('open');
 }
 
+
+function abrirResumen() {
+  const texto = (typeof getResumenConversacion === 'function' ? getResumenConversacion() : '') || (getEstado()?.resumenConversacion || '');
+  const pre = $('resumen-texto');
+  const vacio = $('resumen-vacio');
+  if (pre) pre.textContent = texto || '';
+  if (vacio) vacio.style.display = texto && texto.trim() ? 'none' : 'block';
+  $('resumen-overlay')?.classList.add('open');
+}
+function cerrarResumen() {
+  $('resumen-overlay')?.classList.remove('open');
+}
+
 if ($('btn-guardar-mem')) $('btn-guardar-mem').onclick = guardarMemoriaActual;
 if ($('btn-memorias')) $('btn-memorias').onclick = abrirMemorias;
 if ($('btn-cerrar-mem')) $('btn-cerrar-mem').onclick = cerrarMemorias;
+if ($('btn-ver-resumen')) $('btn-ver-resumen').onclick = abrirResumen;
+if ($('btn-cerrar-resumen')) $('btn-cerrar-resumen').onclick = cerrarResumen;
+if ($('resumen-overlay')) {
+  $('resumen-overlay').addEventListener('click', (e) => {
+    if (e.target === $('resumen-overlay')) cerrarResumen();
+  });
+}
+
 if ($('mem-overlay')) {
   $('mem-overlay').addEventListener('click', (e) => {
     if (e.target === $('mem-overlay')) cerrarMemorias();
