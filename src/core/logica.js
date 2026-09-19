@@ -582,6 +582,7 @@ export async function iniciarChatLasCinco() {
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
+  estado.resumenConversacion = 'Modo: chat con las 5.\nPresentes: Ichika, Nino, Miku, Yotsuba, Itsuki.\nMensaje inicial: están las cinco juntas; el usuario puede escribir y ellas responden cada una con su estilo.';
   log('Chat con las 5 iniciado');
   return {
     chica: 'Nino',
@@ -639,6 +640,16 @@ export function iniciarHistoria(chica, historiaId) {
   estado.ultimoMensajeUsuario = null;
   const texto = rellenarNombre(h.mensajeBienvenida, estado.nombreUsuario);
   estado.historial.push({ role: 'assistant', content: texto, chica });
+  // Semilla del resumen progresivo con el mensaje de bienvenida (primer mensaje de la historia)
+  const nombreHist = (h.nombre || historiaId || 'historia').toString();
+  const extracto = String(texto || '').replace(/\s+/g, ' ').trim().slice(0, 420);
+  estado.resumenConversacion = [
+    `Historia: ${nombreHist}`,
+    `Presentes: ${chica}`,
+    `Relación inicial: ${estado.relacion}`,
+    `Mensaje de bienvenida (${chica}): ${extracto}`
+  ].join('\n');
+  log('Resumen sembrado con bienvenida de historia:', nombreHist);
   const welcomeSexual = /chup|mamad|pija|verga|foll|coño|boxers|te saca la|en la boca/i.test(texto);
   if (welcomeSexual) estado.fase = FASE.INTIMO;
   let tagInferido = 'hablando';
