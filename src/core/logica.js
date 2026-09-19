@@ -49,7 +49,8 @@ let estado = {
   ubicacion: null,          // lugar actual (casa, cafe, parque, etc.)
   chica: null,
   chicasActivas: [],
-  historial: [],
+  historial: [],            // se guarda localmente (memorias/UI); YA NO se manda completo a la IA
+  resumenConversacion: '',  // resumen progresivo = único contexto histórico enviado a la IA
   nombreUsuario: NOMBRE_USUARIO_DEFAULT || 'Fabrizio',
   hechos: [],
   keyIndex: 0,
@@ -520,6 +521,7 @@ export function exportarEstadoCompleto() {
     nombreUsuario: estado.nombreUsuario,
     hechos: [...(estado.hechos || [])],
     historial: estado.historial.map(h => ({ ...h })),
+    resumenConversacion: estado.resumenConversacion || '',
     ultimoMensajeUsuario: estado.ultimoMensajeUsuario,
     ropaPorChica: ropaCopy
   };
@@ -541,6 +543,7 @@ export function restaurarEstadoCompleto(snap) {
   if (snap.nombreUsuario) estado.nombreUsuario = snap.nombreUsuario;
   estado.hechos = Array.isArray(snap.hechos) ? [...snap.hechos] : [];
   estado.historial = Array.isArray(snap.historial) ? snap.historial.map(h => ({ ...h })) : [];
+  estado.resumenConversacion = snap.resumenConversacion || '';
   estado.ultimoMensajeUsuario = snap.ultimoMensajeUsuario || null;
   estado.ropaPorChica = {};
   if (snap.ropaPorChica && typeof snap.ropaPorChica === 'object') {
@@ -567,6 +570,7 @@ export async function iniciarChatLasCinco() {
   estado.chica = 'Nino';
   estado.chicasActivas = [...lasCinco];
   estado.historial = [];
+  estado.resumenConversacion = '';
   estado.fase = FASE.NORMAL;
   estado.ubicacion = null;
   estado.hechos = [];
@@ -602,6 +606,7 @@ export function iniciarChatLibre(chica) {
   estado.fase = FASE.NORMAL;
   estado.ubicacion = null;
   estado.historial = [];
+  estado.resumenConversacion = '';
   estado.hechos = [];
   estado.modo = 'libre';
   estado.historiaId = null;
@@ -623,6 +628,7 @@ export function iniciarHistoria(chica, historiaId) {
   estado.fase = FASE.NORMAL;
   estado.ubicacion = null;
   estado.historial = [];
+  estado.resumenConversacion = '';
   estado.hechos = [];
   estado.modo = 'historia';
   estado.historiaId = historiaId;
@@ -751,6 +757,10 @@ function construirContexto(mensajeUsuarioActual = '') {
     `Chica principal: ${estado.chica}`,
     `Presentes: ${estado.chicasActivas.join(', ')}`
   ];
+  if (estado.resumenConversacion && estado.resumenConversacion.trim()) {
+    lineas.push('### RESUMEN DE LA CONVERSACIÓN (contexto histórico)');
+    lineas.push(estado.resumenConversacion.trim());
+  }
   if (estado.ubicacion) {
     const lug = getLugar(estado.ubicacion);
     lineas.push(`Lugar actual: ${lug ? lug.nombre : estado.ubicacion}`);
@@ -1223,6 +1233,52 @@ function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex, inten
   return { elegido, razon, fuente: resultado.fuente || '', puntuacion: resultado.puntuacion || 0 };
 }
 
+
+/** Actualiza el resumen progresivo de la conversación (único contexto histórico enviado a la IA). */
+async function actualizarResumenProgresivo(mensajeUsuario, respuestaBot) {
+  const prev = (estado.resumenConversacion || '').trim();
+  const system = `Sos un asistente que mantiene un resumen corto y útil de un roleplay erótico adulto.
+Actualizá el resumen con el último intercambio. Reglas:
+- Máximo 350 palabras.
+- Conservá: personajes presentes, lugar, relación, ropa/estado físico, acciones sexuales relevantes, hechos importantes, tono emocional.
+- Escribí en tercera persona, claro y denso (sin relleno).
+- Si no había resumen previo, creá uno desde cero con este intercambio.
+- Respondé SOLO con el resumen actualizado, sin título ni comillas.`;
+
+  const user = `RESUMEN ANTERIOR:
+${prev || '(vacío — primer mensaje)'}
+
+ÚLTIMO INTERCAMBIO:
+Usuario: ${String(mensajeUsuario || '').slice(0, 600)}
+${estado.chica || 'Bot'}: ${String(respuestaBot || '').slice(0, 900)}
+
+Escribí el resumen actualizado:`;
+
+  try {
+    const raw = await llamarGroq(
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ],
+      {
+        model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : MODELO,
+        temperature: 0.3,
+        max_tokens: 500,
+        proposito: 'resumen-progresivo'
+      }
+    );
+    const limpio = String(raw || '').trim();
+    if (limpio && limpio.length > 20) {
+      estado.resumenConversacion = limpio.slice(0, 2500);
+      log('Resumen actualizado (' + estado.resumenConversacion.length + ' chars)');
+    }
+  } catch (e) {
+    const linea = `Usuario: ${String(mensajeUsuario || '').slice(0, 120)} | ${estado.chica}: ${String(respuestaBot || '').slice(0, 160)}`;
+    estado.resumenConversacion = ((prev ? prev + '\n' : '') + linea).slice(-2000);
+    log('Resumen fallback local');
+  }
+}
+
 export async function enviarMensaje(mensajeUsuario) {
   if (!estado.chica) throw new Error('Selecciona una chica primero');
   try { await ensureImagenesLoaded(); } catch (_) {}
@@ -1245,10 +1301,11 @@ export async function enviarMensaje(mensajeUsuario) {
   const escenaSex = !soloMuestraUsuario && (esEscenaSex() || PATRON_SEXO.test(mensajeUsuario));
   const soloNoSex = !escenaSex;
 
-  const tags = soloNoSex ? listarTagsNoSex(estado.chica) : listarTags(estado.chica);
-  const descripcionesVisuales = listarDescripcionesTags(estado.chica, soloNoSex);
+  // Tags y descripciones visuales YA NO se mandan en la llamada principal (ahorro de tokens).
+  // El tag real se elige después con elegirTagConQwen (segunda API call).
+  // Lore deshabilitado temporalmente (standby) — ver README.
   const personalidad = getPersonalidad(estado.chica, estado.nombreUsuario);
-  let system = armarSystemPrompt(personalidad, estado.nombreUsuario, construirContexto(mensajeUsuario), tags, getLore(estado.nombreUsuario), descripcionesVisuales);
+  let system = armarSystemPrompt(personalidad, estado.nombreUsuario, construirContexto(mensajeUsuario), [], '', []);
   if (estado.chicasActivas.length > 1) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
@@ -1283,9 +1340,9 @@ export async function enviarMensaje(mensajeUsuario) {
     accionActual: estado.accionActual
   });
 
+  // Solo system (incluye resumen) + mensaje actual. YA NO se manda el historial completo.
   const messages = [
     { role: 'system', content: system },
-    ...estado.historial.slice(-MAX_HISTORIAL).map((h) => ({ role: h.role, content: h.content })),
     { role: 'user', content: mensajeUsuario }
   ];
   let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)' });
@@ -1294,7 +1351,6 @@ export async function enviarMensaje(mensajeUsuario) {
     for (const extra of PROMPTS_REINTENTO) {
       raw = await llamarGroq([
         { role: 'system', content: system + '\n\n' + extra },
-        ...estado.historial.slice(-8).map((h) => ({ role: h.role, content: h.content })),
         { role: 'user', content: mensajeUsuario },
         { role: 'assistant', content: raw || '' },
         { role: 'user', content: 'Corrige SOLO JSON.' }
@@ -1405,6 +1461,13 @@ export async function enviarMensaje(mensajeUsuario) {
   estado.historial.push({ role: 'assistant', content: parsed.respuesta });
   if (estado.historial.length > MAX_HISTORIAL * 2) estado.historial = estado.historial.slice(-MAX_HISTORIAL * 2);
 
+  // Actualizar resumen progresivo (reemplaza el historial completo en el próximo prompt)
+  try {
+    await actualizarResumenProgresivo(mensajeUsuario, parsed.respuesta);
+  } catch (e) {
+    log('No se pudo actualizar resumen:', e?.message || e);
+  }
+
   logGroup('Respuesta final', {
     fase: estado.fase,
     relacion: estado.relacion,
@@ -1446,6 +1509,7 @@ export async function regenerarUltimaRespuesta() {
 
 export function resetChat() {
   estado.historial = [];
+  estado.resumenConversacion = '';
   estado.fase = FASE.NORMAL;
   estado.ubicacion = null;
   estado.hechos = [];
@@ -1467,6 +1531,7 @@ export function volverAlSelector() {
   estado.chica = null;
   estado.chicasActivas = [];
   estado.historial = [];
+  estado.resumenConversacion = '';
   estado.fase = FASE.NORMAL;
   estado.ubicacion = null;
   estado.hechos = [];
@@ -1478,6 +1543,10 @@ export function volverAlSelector() {
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
+}
+
+export function getResumenConversacion() {
+  return estado.resumenConversacion || '';
 }
 
 export { getChicasDisponibles, getImagenSelector, getDescripcionChica, listarTags };
