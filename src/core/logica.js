@@ -973,7 +973,21 @@ function resolverIntencionUsuario(mensaje) {
     return { tagHint: ['usuario_muestra_su_verga', 'muestra_su_verga', 'viendo_verga', 've_mi_verga'], label: 'muestra' };
   }
   if (/\b(bola|bolas|testicul|testículo|testiculo)s?\b/.test(t)) {
-    return { tagHint: ['chupando_bolas', 'chupando_bola', 'bolas', 'lamiendo_bolas'], label: 'oral_bolas' };
+    // Obligatorio definir lado: izquierda, derecha o ambas
+    if (/\b(izquierda|izq|lado izquierdo)\b/.test(t) && !/\b(derecha|ambas|los dos)\b/.test(t)) {
+      return { tagHint: ['chupando_bola_izquierda', 'bola_izquierda', 'bolas_izquierda'], label: 'oral_bola_izquierda' };
+    }
+    if (/\b(derecha|der|lado derecho)\b/.test(t) && !/\b(izquierda|ambas|los dos)\b/.test(t)) {
+      return { tagHint: ['chupando_bola_derecha', 'bola_derecha', 'bolas_derecha'], label: 'oral_bola_derecha' };
+    }
+    if (/\b(ambas|los dos|las dos|las dos bolas)\b/.test(t) || (/\bbolas\b/.test(t) && !/\b(izquierda|derecha|izq|der)\b/.test(t))) {
+      return { tagHint: ['chupando_bolas', 'chupando_bola', 'bolas', 'lamiendo_bolas'], label: 'oral_bolas_ambas' };
+    }
+    // "chupame la bola" sin lado → el selector debe elegir un lado concreto
+    return {
+      tagHint: ['chupando_bola_izquierda', 'chupando_bola_derecha', 'chupando_bolas'],
+      label: 'oral_bolas_definir_lado'
+    };
   }
   if (/solo la punta|chupa.*(solo )?(la )?punta|lame.*(solo )?(la )?punta|cabeza del|solo la cabeza/.test(t)) {
     return { tagHint: ['chupando_solo_la_punta', 'punta'], label: 'oral_punta' };
@@ -1159,10 +1173,11 @@ Reglas estrictas (prioridad de arriba hacia abajo):
 1) CONTINUIDAD DE CORRIDA: Solo si el USUARIO se corre y la ACCIÓN ANTERIOR es de ESTA misma chica. Si el mensaje dice que OTRO (ej. Aldo) se corre en otra chica, IGNORÁ la acción anterior y elegí según el mensaje actual.
 2) Si esta chica NO está involucrada en el acto del mensaje (solo mira / se pone celosa), elegí tag de reacción o "hablando", NO tags de recibir semen / oral / facial.
 3) Si el usuario menciona explícitamente otra zona (assjob, nalgas, tetas, boca, cara, etc.) sobre ESTA chica, ahí sí cambiá.
-4) SOLO podés elegir un tag que esté en la lista. No inventes tags.
-5) Prestá atención a la zona del cuerpo y a QUIÉN recibe la acción.
-6) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
-7) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
+4) BOLAS: Si la escena es chupar/lamer bolas, el tag DEBE indicar lado: izquierda, derecha o ambas (chupando_bola_izquierda / chupando_bola_derecha / chupando_bolas). No uses un tag genérico de oral si hay tags de bola con lado.
+5) SOLO podés elegir un tag que esté en la lista. No inventes tags.
+6) Prestá atención a la zona del cuerpo y a QUIÉN recibe la acción.
+7) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
+8) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
 
   const user = `CHICA: ${chica}
 ACCIÓN ANTERIOR (solo si aplica a ESTA chica y el usuario se corre): ${accionParaContinuar || 'ninguna — no arrastrar de otra chica/otra escena'}
@@ -1403,6 +1418,9 @@ export async function enviarMensaje(mensajeUsuario) {
     system += '\n\n⚠️ Usuario SOLO mostró la pija. Reaccioná. PROHIBIDO chupar. imagen_tag = usuario_muestra_su_verga.';
   } else if (intencion) {
     system += `\n\n⚠️ El usuario pidió específicamente: ${intencion.label}. Describí ESA acción (no inventes otra pose).`;
+    if (String(intencion.label || '').startsWith('oral_bola')) {
+      system += `\n⚠️ BOLAS: en el diálogo y la acción DEBÉS dejar claro si chupa la bola IZQUIERDA, la DERECHA o AMBAS. No digas solo "las bolas" sin especificar si el usuario pidió un lado.`;
+    }
   }
 
   // Info de sugerencia de lugar (si hay)
