@@ -1252,6 +1252,9 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.chicasActivas.length > 1) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
+    system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes: ${estado.chicasActivas.join(', ')}.`;
+    system += `\nSi el usuario mencionó a alguno de ellos haciendo algo (follando, mirando, hablando, etc.), DEBÉS generar bloques [Nombre]: para la chica principal Y para TODOS los mencionados.`;
+    system += `\nEjemplo: [Nino]: ... [Miku]: ... [Aldo]: ...  Nadie se queda sin hablar. Cada uno con su propia acción.`;
   }
 
   const intencion = resolverIntencionUsuario(mensajeUsuario);
