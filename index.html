@@ -100,6 +100,7 @@ h1{text-align:center;color:var(--accent);margin-bottom:8px;font-size:1.8rem}
 <button class="btn sm ghost" id="btn-apis-chat">🔑 APIs</button>
 <button class="btn sm mem-save" id="btn-guardar-mem">💾 Guardar</button>
 <button class="btn sm ghost" id="btn-memorias">📚 Memorias</button>
+<button class="btn sm ghost" id="btn-ver-resumen">📝 Resumen</button>
 <button class="btn sm ghost" id="btn-refresh">↻ Refresh</button>
 <button class="btn sm ghost" id="btn-reset">Reset</button>
 <button class="btn sm ghost" id="btn-salir-chat">Cambiar chica</button>
@@ -132,5 +133,19 @@ h1{text-align:center;color:var(--accent);margin-bottom:8px;font-size:1.8rem}
 <div class="mem-body" id="mem-body"><p class="mem-empty">Cargando...</p></div>
 </div></div>
 <script type="module" src="./index.app.js"></script>
+
+<div class="mem-overlay" id="resumen-overlay">
+  <div class="mem-panel">
+    <div class="mem-header">
+      <h2>📝 Resumen de la conversación</h2>
+      <button class="btn sm ghost" id="btn-cerrar-resumen">✕ Cerrar</button>
+    </div>
+    <div class="mem-body">
+      <p class="mem-empty" id="resumen-vacio" style="display:none">Todavía no hay resumen. Enviá al menos un mensaje.</p>
+      <pre id="resumen-texto" style="white-space:pre-wrap;word-break:break-word;color:var(--text);font-family:system-ui,sans-serif;font-size:.92rem;line-height:1.45;margin:0"></pre>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
