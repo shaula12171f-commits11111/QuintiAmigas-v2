@@ -46,6 +46,11 @@ const DUOS = {
 //  TRIOS (3 chicas)
 // ---------------------------------------------------------------------------
 const TRIOS = {
+   follo_a_nino_doggystyle_mientras_meto_los_dedos_en_la_concha_a_miku_y_ichika: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/follo_a_nino_doggystyle_mientras_meto_los_dedos_en_la_concha_a_miku_y_ichika.jpg',
+    descripcion: 'follo a nino doggystyle mientras meto los dedos en las conchas de miku y yotsuba',
+    audio: ''
+  },
   // nino_ichika_miku_triple_mamada: {
   //   url: 'https://...',
   //   descripcion: 'Nino, Ichika y Miku triple mamada',
