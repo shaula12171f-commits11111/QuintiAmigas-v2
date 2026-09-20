@@ -19,9 +19,18 @@ import { getHistoria, rellenarNombre } from '../stories/historias.js';
 import { getLore } from '../world/lore.js';
 import { clasificarIntencionLugar, getFondoLugar, getLugar } from '../systems/lugares.js';
 import { detectarEmocionEnTexto, listarEmociones } from '../systems/emociones.js';
-import { resolverImagenGrupalDesdeMensaje } from '../systems/imagenesGrupales.js';
-import { resolverImagenParejasDesdeMensaje } from '../systems/imagenesParejas.js';
-import { resolverImagenMultiHombresDesdeMensaje } from '../systems/imagenesMultiHombres.js';
+import {
+  listarEscenasDisponibles as listarGrupalesDisponibles,
+  getEscenaPorTag as getGrupalPorTag
+} from '../systems/imagenesGrupales.js';
+import {
+  listarEscenasDisponibles as listarParejasDisponibles,
+  getEscenaPorTag as getParejaPorTag
+} from '../systems/imagenesParejas.js';
+import {
+  listarEscenasDisponibles as listarMultiHombresDisponibles,
+  getEscenaPorTag as getMultiHombresPorTag
+} from '../systems/imagenesMultiHombres.js';
 import { GROQ_KEYS, MODELO, MODELO_TAGS, NOMBRE_USUARIO_DEFAULT } from '../../config.js';
 import { getGroqKeyStrings } from '../systems/apiKeys.js';
 
@@ -1292,6 +1301,107 @@ Respondé solo el tag:`;
 }
 
 
+
+/**
+ * Qwen elige UNA imagen compartida (grupal / parejas / multi hombres) o "ninguno".
+ * Solo se llama si hay 2+ personajes o el mensaje nombra varias chicas / aldo+chica.
+ */
+async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []) {
+  const disponibles = [
+    ...listarGrupalesDisponibles(),
+    ...listarParejasDisponibles(),
+    ...listarMultiHombresDisponibles()
+  ];
+  if (!disponibles.length) {
+    log('Imagen compartida: no hay escenas con URL en grupales/parejas/multi');
+    return null;
+  }
+
+  const msg = String(mensajeUsuario || '').trim();
+  const presentes = [...new Set((nombresBloques || []).filter((n) => n && n !== 'Aldo' && n !== 'Sistema'))];
+  const lista = disponibles.map((e) => e.tag).join(', ');
+
+  const system = `Sos un selector de IMAGEN DE ESCENA compartida para roleplay erótico multi.
+El usuario describe una escena. Hay tags de imagen ya cargados (grupales, parejas, multi-hombres).
+Debés elegir UN tag de la lista que represente TODA la escena, o "ninguno" si ninguno encaja bien.
+
+Reglas:
+1) SOLO podés responder con un tag exacto de la lista, o la palabra ninguno.
+2) Si el usuario describe varias chicas / acciones combinadas (ej. doggy a una y dedos a otras), preferí un tag grupal/trío que cubra eso.
+3) Si la escena es 1 chica con 2+ hombres (usuario+Aldo), preferí tags multi_hombres.
+4) Si es pose compartida (ej. follando en el aire entre dos chicas), preferí parejas.
+5) Si NINGÚN tag de la lista describe bien la escena, respondé: ninguno
+6) NO inventes tags. NO expliques. SOLO el tag o ninguno.`;
+
+  const user = `MENSAJE DEL USUARIO:
+"""${msg.slice(0, 900)}"""
+
+PERSONAJES QUE RESPONDEN EN ESTE TURNO: ${presentes.join(', ') || '(desconocido)'}
+
+TAGS DE ESCENA DISPONIBLES (elegí UNO o ninguno):
+${lista}
+
+Respondé solo el tag o ninguno:`;
+
+  try {
+    const raw = await llamarGroq(
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ],
+      {
+        model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : 'qwen/qwen3.6-27b',
+        temperature: 0.1,
+        max_tokens: 80,
+        reasoning_effort: 'none',
+        reasoning_format: 'hidden',
+        proposito: 'selector-escena-compartida (MODELO_TAGS)'
+      }
+    );
+
+    let limpio = String(raw || '')
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<\/?think>/gi, '')
+      .trim();
+    const lineas = limpio.split(/[\n\r]+/).map((l) => l.trim()).filter(Boolean);
+    let candidato = (lineas.length ? lineas[lineas.length - 1] : limpio)
+      .replace(/^["'`]+|["'`]+$/g, '')
+      .replace(/^tag\s*[:=]\s*/i, '')
+      .trim();
+    let tag = candidato.split(/[\s,;|]+/)[0].replace(/["'`]/g, '').trim();
+
+    if (!tag || /^ninguno$/i.test(tag) || /^none$/i.test(tag) || /^null$/i.test(tag)) {
+      log('Qwen escena compartida → ninguno');
+      return null;
+    }
+
+    // Resolver entrada completa
+    let escena = getGrupalPorTag(tag) || getParejaPorTag(tag) || getMultiHombresPorTag(tag);
+    if (!escena) {
+      // fuzzy
+      const low = tag.toLowerCase();
+      const hit = disponibles.find((e) =>
+        e.tag.toLowerCase() === low ||
+        e.tag.toLowerCase().includes(low) ||
+        low.includes(e.tag.toLowerCase())
+      );
+      if (hit) {
+        escena = getGrupalPorTag(hit.tag) || getParejaPorTag(hit.tag) || getMultiHombresPorTag(hit.tag) || hit;
+      }
+    }
+    if (!escena || !escena.url) {
+      log('Qwen escena compartida tag no encontrado:', tag);
+      return null;
+    }
+    log('Qwen escena compartida →', escena.tag, '(' + (escena.tipo || '?') + ')');
+    return escena;
+  } catch (e) {
+    console.error('[Qwen escena compartida]', e);
+    return null;
+  }
+}
+
+
 /** TESTING ONLY — Motor Nakardas (ya no decide el tag real, solo se compara con la IA) */
 function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex, intencionUsuario = null) {
   const ropa = getRopaChica(chica);
@@ -1548,33 +1658,31 @@ export async function enviarMensaje(mensajeUsuario) {
     });
   }
 
-  // === IMAGEN GRUPAL / PAREJAS: escena compartida si hay arte ===
+  // === IMAGEN COMPARTIDA: Qwen elige entre grupales / parejas / multi hombres ===
   try {
     const nombresBloques = partes.map((p) => p.chica).filter((c) => c && c !== 'Aldo' && c !== 'Sistema');
-    let compartida = resolverImagenGrupalDesdeMensaje(mensajeUsuario, nombresBloques);
-    let tipoComp = 'grupal';
-    if (!compartida || !compartida.url) {
-      compartida = resolverImagenParejasDesdeMensaje(mensajeUsuario, nombresBloques);
-      tipoComp = 'parejas';
-    }
-    if (!compartida || !compartida.url) {
-      compartida = resolverImagenMultiHombresDesdeMensaje(mensajeUsuario, nombresBloques);
-      tipoComp = 'multi_hombres';
-    }
-    if (compartida && compartida.url) {
-      const setParticipantes = new Set((compartida.participantes || []).map((n) => n.toLowerCase()));
-      let aplicadas = 0;
-      for (const p of partes) {
-        if (!p.chica || p.chica === 'Aldo') continue;
-        if (setParticipantes.size === 0 || setParticipantes.has(String(p.chica).toLowerCase())) {
+    const msgLow = String(mensajeUsuario || '').toLowerCase();
+    const nombraVarias = ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'].filter((n) => msgLow.includes(n)).length >= 2;
+    const nombraAldoYChica = msgLow.includes('aldo') && ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'].some((n) => msgLow.includes(n));
+    const convieneCompartida = nombresBloques.length >= 2 || nombraVarias || nombraAldoYChica;
+
+    if (convieneCompartida) {
+      const compartida = await elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques);
+      if (compartida && compartida.url) {
+        // Aplicar a todas las chicas del turno (escena compartida)
+        let aplicadas = 0;
+        for (const p of partes) {
+          if (!p.chica || p.chica === 'Aldo' || p.chica === 'Sistema') continue;
           p.imagenUrl = compartida.url;
           p.audioUrl = compartida.audio || p.audioUrl || '';
           p.descripcionImg = compartida.descripcion || p.descripcionImg || '';
           p.imagen_tag = compartida.tag || p.imagen_tag;
           aplicadas++;
         }
+        log('Imagen compartida Qwen aplicada:', compartida.tag, 'tipo=', compartida.tipo, '→', aplicadas, 'chicas');
+      } else {
+        log('Imagen compartida Qwen → ninguno; se mantienen individuales');
       }
-      log('Imagen compartida (' + tipoComp + ') aplicada:', compartida.tag, '→', aplicadas, 'chicas');
     }
   } catch (e) {
     log('Imagen compartida error:', e?.message || e);
