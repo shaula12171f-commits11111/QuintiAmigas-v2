@@ -19,11 +19,11 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  DUOS (2 chicas)
 // ---------------------------------------------------------------------------
 const DUOS = {
-  // nino_ichika_doble_mamada: {
-  //   url: 'https://...',
-  //   descripcion: 'Nino e Ichika mamando al usuario',
-  //   audio: ''
-  // },
+  nino_ichika_doble_mamada: {
+    url: 'https://raw.githubusercontent.com/SORFAR123123/Putas-de-fabri/main/imagenes/img_1772841651283.jpg',
+    descripcion: 'Nino e Ichika mamando al usuario',
+    audio: ''
+  },
   // nino_miku_doble_mamada: {
   //   url: 'https://...',
   //   descripcion: 'Nino y Miku doble mamada',
@@ -201,8 +201,6 @@ export function extraerChicasGrupales(mensajeUsuario, bloquesChicas = []) {
 
 /**
  * Busca por tag exacto o por permutación de nombres + sufijo de acción.
- * Ej. entrás con ['Nino','Ichika'] + 'mamada' → prueba:
- *   nino_ichika_doble_mamada, ichika_nino_doble_mamada
  */
 export function buscarImagenGrupal(nombresChicas, accionBase) {
   const names = [];
