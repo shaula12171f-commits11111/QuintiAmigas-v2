@@ -16,6 +16,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  ESCENAS (agregá solo con URL real)
 // ---------------------------------------------------------------------------
 const ESCENAS = {
+  nino_mira_dos_pollas: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/multi_hombres/nino_mira_dos_pollas.jpg',
+    descripcion: 'nino mira dos pollas la de usuario y otro.',
+    audio: ''
+  },
+
   nino_follando_en_doggy_y_chupando_polla: {
     url: 'https://img.ge/i/ssaly91.png',
     descripcion: 'Nino en doggy follando y chupando polla (multi hombres)',
