@@ -84,10 +84,12 @@ export function detectarAccionParejas(mensajeUsuario) {
     return 'follando_en_el_aire';
   }
 
+  // Parejas mixtas: usuario + aldo + al menos dos chicas
   if (/\b(aldo)\b/.test(t) && /\b(pareja|parejas|conmigo|con aldo)\b/.test(t)) {
     return 'parejas';
   }
   if (/\b(aldo)\b/.test(t) && CHICAS_VALIDAS.filter((c) => t.includes(c.toLowerCase())).length >= 2) {
+    // "ichika conmigo y nino con aldo" / similar
     if (/\b(conmigo|yo con|me folla|me monto|follando)\b/.test(t) || /\b(y)\b/.test(t)) {
       return 'parejas';
     }
@@ -113,6 +115,9 @@ export function extraerChicasParejas(mensajeUsuario, bloquesChicas = []) {
   return found;
 }
 
+/**
+ * Busca imagen por nombres + sufijo (prueba permutaciones de nombres).
+ */
 export function buscarImagenParejas(nombresChicas, sufijoAccion) {
   const names = [];
   for (const n of nombresChicas || []) {
@@ -139,12 +144,14 @@ export function buscarImagenParejas(nombresChicas, sufijoAccion) {
     }
   }
 
+  // Match flexible: mismos nombres en el tag + sufijo
   for (const tag of Object.keys(IMAGENES_PAREJAS)) {
     const entry = IMAGENES_PAREJAS[tag];
     if (!entry?.url) continue;
     if (!tag.includes(sufijo)) continue;
-    const sinSufijo = tag.replace(`_${sufijo}`, '');
+    const sinSufijo = tag.replace(`_${sufijo}`, '').replace(new RegExp(`_${sufijo}$`), '');
     const partesTag = sinSufijo.split('_').filter(Boolean);
+    // quitar tokens que no son chicas (usuario, aldo, fabrizio)
     const soloChicas = partesTag.filter((p) => CHICAS_VALIDAS.some((c) => c.toLowerCase() === p));
     const setTag = new Set(soloChicas);
     if (names.length === setTag.size && names.every((n) => setTag.has(n))) {
@@ -167,6 +174,10 @@ export function resolverImagenParejasDesdeMensaje(mensajeUsuario, bloquesChicas 
   if (!accion) return null;
 
   const chicas = extraerChicasParejas(mensajeUsuario, bloquesChicas);
+  if (chicas.length < 2 && accion !== 'parejas') {
+    // follando en el aire con 2 chicas hace falta 2
+    if (accion === 'follando_en_el_aire' && chicas.length < 2) return null;
+  }
   if (chicas.length < 2) return null;
 
   return buscarImagenParejas(chicas, accion);
@@ -174,4 +185,33 @@ export function resolverImagenParejasDesdeMensaje(mensajeUsuario, bloquesChicas 
 
 export function listarClavesParejas() {
   return Object.keys(IMAGENES_PAREJAS);
+}
+
+/** Lista solo escenas con URL real para que Qwen elija. */
+export function listarEscenasDisponibles() {
+  const out = [];
+  for (const [tag, entry] of Object.entries(IMAGENES_PAREJAS)) {
+    if (entry && entry.url && String(entry.url).startsWith('http')) {
+      out.push({
+        tag,
+        url: entry.url,
+        descripcion: entry.descripcion || '',
+        audio: entry.audio || '',
+        tipo: 'parejas'
+      });
+    }
+  }
+  return out;
+}
+
+export function getEscenaPorTag(tag) {
+  const entry = IMAGENES_PAREJAS[tag];
+  if (!entry || !entry.url) return null;
+  return {
+    tag,
+    url: entry.url,
+    descripcion: entry.descripcion || '',
+    audio: entry.audio || '',
+    tipo: 'parejas'
+  };
 }
