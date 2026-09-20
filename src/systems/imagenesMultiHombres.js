@@ -16,12 +16,6 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  ESCENAS (agregá solo con URL real)
 // ---------------------------------------------------------------------------
 const ESCENAS = {
-  nino_mira_dos_pollas: {
-    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/multi_hombres/nino_mira_dos_pollas.jpg',
-    descripcion: 'nino mira dos pollas la de usuario y otro.',
-    audio: ''
-  },
-
   nino_follando_en_doggy_y_chupando_polla: {
     url: 'https://img.ge/i/ssaly91.png',
     descripcion: 'Nino en doggy follando y chupando polla (multi hombres)',
@@ -89,6 +83,9 @@ export function extraerChicaMultiHombres(mensajeUsuario, bloquesChicas = []) {
   return null;
 }
 
+/**
+ * Busca por tag exacto o chica + sufijo de acción.
+ */
 export function buscarImagenMultiHombres(chica, sufijoAccion) {
   const name = normalizarNombre(chica);
   if (!name || !sufijoAccion) return null;
@@ -96,7 +93,7 @@ export function buscarImagenMultiHombres(chica, sufijoAccion) {
   const sufijo = String(sufijoAccion).toLowerCase();
   const candidatos = [
     `${name}_${sufijo}`,
-    sufijo,
+    sufijo, // por si el tag no lleva nombre
   ];
 
   for (const tag of candidatos) {
@@ -113,6 +110,7 @@ export function buscarImagenMultiHombres(chica, sufijoAccion) {
     }
   }
 
+  // Match flexible: tag contiene nombre de chica y parte del sufijo
   for (const tag of Object.keys(IMAGENES_MULTI_HOMBRES)) {
     const entry = IMAGENES_MULTI_HOMBRES[tag];
     if (!entry?.url) continue;
@@ -130,7 +128,7 @@ export function buscarImagenMultiHombres(chica, sufijoAccion) {
         };
       }
     }
-    if (tl.includes(sufijo)) {
+    if (tl.includes(sufijo) || sufijo.split('_').every((p) => p.length < 3 || tl.includes(p))) {
       return {
         tag,
         url: entry.url,
@@ -157,4 +155,33 @@ export function resolverImagenMultiHombresDesdeMensaje(mensajeUsuario, bloquesCh
 
 export function listarClavesMultiHombres() {
   return Object.keys(IMAGENES_MULTI_HOMBRES);
+}
+
+/** Lista solo escenas con URL real para que Qwen elija. */
+export function listarEscenasDisponibles() {
+  const out = [];
+  for (const [tag, entry] of Object.entries(IMAGENES_MULTI_HOMBRES)) {
+    if (entry && entry.url && String(entry.url).startsWith('http')) {
+      out.push({
+        tag,
+        url: entry.url,
+        descripcion: entry.descripcion || '',
+        audio: entry.audio || '',
+        tipo: 'multi_hombres'
+      });
+    }
+  }
+  return out;
+}
+
+export function getEscenaPorTag(tag) {
+  const entry = IMAGENES_MULTI_HOMBRES[tag];
+  if (!entry || !entry.url) return null;
+  return {
+    tag,
+    url: entry.url,
+    descripcion: entry.descripcion || '',
+    audio: entry.audio || '',
+    tipo: 'multi_hombres'
+  };
 }
