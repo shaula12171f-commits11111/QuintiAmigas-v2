@@ -19,6 +19,7 @@ import { getHistoria, rellenarNombre } from '../stories/historias.js';
 import { getLore } from '../world/lore.js';
 import { clasificarIntencionLugar, getFondoLugar, getLugar } from '../systems/lugares.js';
 import { detectarEmocionEnTexto, listarEmociones } from '../systems/emociones.js';
+import { resolverImagenGrupalDesdeMensaje } from '../systems/imagenesGrupales.js';
 import { GROQ_KEYS, MODELO, MODELO_TAGS, NOMBRE_USUARIO_DEFAULT } from '../../config.js';
 import { getGroqKeyStrings } from '../systems/apiKeys.js';
 
@@ -1543,6 +1544,29 @@ export async function enviarMensaje(mensajeUsuario) {
       descripcionImg: media.descripcion || '',
       imagen_tag: media.tag
     });
+  }
+
+  // === IMAGEN GRUPAL: si 2+ chicas hacen la misma acción sobre el usuario y hay arte ===
+  try {
+    const nombresBloques = partes.map((p) => p.chica).filter((c) => c && c !== 'Aldo' && c !== 'Sistema');
+    const grupal = resolverImagenGrupalDesdeMensaje(mensajeUsuario, nombresBloques);
+    if (grupal && grupal.url) {
+      const setParticipantes = new Set((grupal.participantes || []).map((n) => n.toLowerCase()));
+      let aplicadas = 0;
+      for (const p of partes) {
+        if (!p.chica || p.chica === 'Aldo') continue;
+        if (setParticipantes.has(String(p.chica).toLowerCase())) {
+          p.imagenUrl = grupal.url;
+          p.audioUrl = grupal.audio || p.audioUrl || '';
+          p.descripcionImg = grupal.descripcion || p.descripcionImg || '';
+          p.imagen_tag = grupal.tag || p.imagen_tag;
+          aplicadas++;
+        }
+      }
+      log('Imagen GRUPAL aplicada:', grupal.clave, '→', aplicadas, 'chicas');
+    }
+  } catch (e) {
+    log('Imagen grupal error:', e?.message || e);
   }
 
   const parteConDesc = partes.find((p) => p.descripcionImg?.trim());
