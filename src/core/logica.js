@@ -21,6 +21,7 @@ import { clasificarIntencionLugar, getFondoLugar, getLugar } from '../systems/lu
 import { detectarEmocionEnTexto, listarEmociones } from '../systems/emociones.js';
 import { resolverImagenGrupalDesdeMensaje } from '../systems/imagenesGrupales.js';
 import { resolverImagenParejasDesdeMensaje } from '../systems/imagenesParejas.js';
+import { resolverImagenMultiHombresDesdeMensaje } from '../systems/imagenesMultiHombres.js';
 import { GROQ_KEYS, MODELO, MODELO_TAGS, NOMBRE_USUARIO_DEFAULT } from '../../config.js';
 import { getGroqKeyStrings } from '../systems/apiKeys.js';
 
@@ -1555,6 +1556,10 @@ export async function enviarMensaje(mensajeUsuario) {
     if (!compartida || !compartida.url) {
       compartida = resolverImagenParejasDesdeMensaje(mensajeUsuario, nombresBloques);
       tipoComp = 'parejas';
+    }
+    if (!compartida || !compartida.url) {
+      compartida = resolverImagenMultiHombresDesdeMensaje(mensajeUsuario, nombresBloques);
+      tipoComp = 'multi_hombres';
     }
     if (compartida && compartida.url) {
       const setParticipantes = new Set((compartida.participantes || []).map((n) => n.toLowerCase()));
