@@ -62,11 +62,22 @@ function addUser(text) {
   $('msgs')?.appendChild(el); if ($('msgs')) $('msgs').scrollTop = $('msgs').scrollHeight;
 }
 function addBotPart(part) {
-  const el = document.createElement('div'); el.className = 'msg bot';
-  const tag = document.createElement('div'); tag.className = 'who-tag'; tag.textContent = part.chica || chicaActual || '';
+  const el = document.createElement('div');
+  el.className = 'msg bot' + (part.esEventoHistoria ? ' evento-historia' : '');
+  const tag = document.createElement('div');
+  tag.className = 'who-tag';
+  tag.textContent = part.esEventoHistoria
+    ? ((part.chica || 'Sistema') + ' · mensaje')
+    : (part.chica || chicaActual || '');
   el.appendChild(tag);
   const body = document.createElement('div'); body.innerHTML = fmtText(part.texto); el.appendChild(body);
-  if (part.imagenUrl) { const im = document.createElement('img'); im.className = 'scene'; im.src = part.imagenUrl; el.appendChild(im); }
+  if (part.imagenUrl) {
+    const im = document.createElement('img');
+    im.className = 'scene';
+    im.src = part.imagenUrl;
+    im.alt = part.descripcionImg || part.imagen_tag || '';
+    el.appendChild(im);
+  }
   if (part.descripcionImg) { const c = document.createElement('div'); c.className = 'cap'; c.textContent = part.descripcionImg; el.appendChild(c); }
   let audioEl = null;
   if (part.audioUrl) {
