@@ -1415,11 +1415,43 @@ function clasificarTamanoEscena(nChicas) {
   return 'INDIVIDUAL';
 }
 
+/** Normaliza texto a “slug” parecido a tags (espacios → _, sin acentos). */
+function slugEscena(texto) {
+  return String(texto || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+}
+
 /** Match local: tag que contenga los nombres de las chicas involucradas (+ keywords del mensaje). */
 function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
   if (!disponibles.length || chicas.length < 2) return null;
   const msg = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const slugMsg = slugEscena(mensajeUsuario);
   const names = chicas.map((c) => c.toLowerCase());
+
+  // 0) Match casi exacto: el mensaje slugificado ≈ el tag (tags largos de trío)
+  for (const e of disponibles) {
+    const tl = e.tag.toLowerCase();
+    if (!e.url) continue;
+    if (slugMsg === tl || slugMsg.includes(tl) || tl.includes(slugMsg)) {
+      log('Match LOCAL exacto/slug:', e.tag);
+      return e;
+    }
+    // solapamiento alto de tokens
+    const tokTag = new Set(tl.split('_').filter((t) => t.length > 2));
+    const tokMsg = new Set(slugMsg.split('_').filter((t) => t.length > 2));
+    let inter = 0;
+    for (const t of tokTag) if (tokMsg.has(t)) inter++;
+    const ratio = tokTag.size ? inter / tokTag.size : 0;
+    if (ratio >= 0.7 && names.filter((n) => tl.includes(n)).length >= Math.min(2, names.length)) {
+      log('Match LOCAL por tokens:', e.tag, 'ratio=', ratio.toFixed(2));
+      return e;
+    }
+  }
 
   // 1) Todos los nombres de chicas aparecen en el tag
   let candidatos = disponibles.filter((e) => {
@@ -1427,18 +1459,16 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
     return names.every((n) => tl.includes(n));
   });
 
-  // 2) Si no, al menos 2 nombres en el tag y coinciden con las del mensaje
+  // 2) Si no, al menos 2 nombres en el tag
   if (!candidatos.length) {
     candidatos = disponibles.filter((e) => {
       const tl = e.tag.toLowerCase();
-      const hit = names.filter((n) => tl.includes(n));
-      return hit.length >= 2;
+      return names.filter((n) => tl.includes(n)).length >= 2;
     });
   }
 
   if (!candidatos.length) return null;
 
-  // Preferir el que más keywords del mensaje tenga en el tag
   const keywords = [];
   if (/doggy|a cuatro/.test(msg)) keywords.push('doggy', 'doggystyle');
   if (/dedo|concha|squirt|finger/.test(msg)) keywords.push('dedo', 'concha', 'dedos');
@@ -1454,21 +1484,18 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
     for (const k of keywords) {
       if (tl.includes(k)) score += 3;
     }
-    // bonus si el tamaño del tag sugiere el mismo N de chicas
-    if (names.length === 3 && /trio|triple|miku|ichika/.test(tl)) score += 2;
+    if (names.length === 3 && names.every((n) => tl.includes(n))) score += 15;
     if (score > bestScore) {
       bestScore = score;
       best = e;
     }
   }
   if (best && bestScore >= 20) {
-    // al menos 2 nombres * 10
     log('Match LOCAL escena compartida:', best.tag, 'score=', bestScore);
     return best;
   }
-  // Si hay un solo candidato con todos los nombres, usarlo igual
   if (candidatos.length === 1 && names.every((n) => candidatos[0].tag.toLowerCase().includes(n))) {
-    log('Match LOCAL escena compartida (único con todos los nombres):', candidatos[0].tag);
+    log('Match LOCAL único con todos los nombres:', candidatos[0].tag);
     return candidatos[0];
   }
   return bestScore >= 20 ? best : null;
@@ -2038,44 +2065,25 @@ export async function enviarMensaje(mensajeUsuario) {
     const msgLow = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
     const nombraAldoYChica = msgLow.includes('aldo') && chicasMsg.length >= 1;
 
-    // Acciones distintas por chica (doggy a una + dedos a otras) → NO imagen compartida
-    const focos = chicasMsg.map((c) => ({
-      c,
-      foco: extractAccionRelevanteParaChica(c, mensajeUsuario, chicasMsg)
-    }));
-    const focosUnicos = new Set(focos.map((f) => f.foco.toLowerCase().replace(/\s+/g, ' ').trim()));
-    const accionesMixtas = chicasMsg.length >= 2 && focosUnicos.size >= 2;
-    // "mientras" con verbos distintos suele ser mixto
-    const mientrasMixto = /\bmientras\b/.test(msgLow) && chicasMsg.length >= 2;
-
+    // Con 2+ chicas (o Aldo+chica) SIEMPRE intentar match grupal/parejas/multi.
+    // Si hay tag exacto (ej. trío doggy+dedos), se usa. Si no hay match → individuales.
     const convieneCompartida =
-      !accionesMixtas &&
-      !mientrasMixto &&
-      (chicasMsg.length >= 2 || nombresBloques.length >= 2 || nombraAldoYChica);
+      chicasMsg.length >= 2 || nombresBloques.length >= 2 || nombraAldoYChica;
 
-    log(
-      '¿Compartida?',
-      convieneCompartida,
-      'mixtas=',
-      accionesMixtas,
-      'mientrasMixto=',
-      mientrasMixto,
-      'chicas=',
-      chicasMsg.join(',')
-    );
+    log('¿Intentar compartida?', convieneCompartida, 'chicas=', chicasMsg.join(','), 'bloques=', nombresBloques.join(','));
 
     if (convieneCompartida) {
       const compartida = await elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques);
       if (compartida && compartida.url) {
         const tagLow = String(compartida.tag || '').toLowerCase();
-        // Solo pisar imagen de chicas que el TAG nombra (si el tag no nombra a nadie, aplicar a todas del mensaje)
         const nombradasEnTag = chicasMsg.filter((c) => tagLow.includes(c.toLowerCase()));
+        // Si el tag nombra chicas, solo esas; si no nombra (raro), todas del mensaje
         const targets = nombradasEnTag.length ? nombradasEnTag : chicasMsg;
         let aplicadas = 0;
         for (const p of partes) {
           if (!p.chica || p.chica === 'Aldo' || p.chica === 'Sistema' || p.esEventoHistoria) continue;
           if (targets.length && !targets.some((t) => t.toLowerCase() === String(p.chica).toLowerCase())) {
-            continue; // esta chica no está en la imagen compartida → deja su tag individual
+            continue;
           }
           p.imagenUrl = compartida.url;
           p.audioUrl = compartida.audio || p.audioUrl || '';
@@ -2085,10 +2093,8 @@ export async function enviarMensaje(mensajeUsuario) {
         }
         log('Imagen compartida aplicada:', compartida.tag, '→', aplicadas, 'de', targets.join(','));
       } else {
-        log('Imagen compartida → ninguno; individuales');
+        log('Imagen compartida → ninguno; se mantienen tags individuales por chica');
       }
-    } else {
-      log('Sin compartida (acciones distintas por chica); cada una mantiene su tag individual');
     }
   } catch (e) {
     log('Imagen compartida error:', e?.message || e);
