@@ -1577,15 +1577,21 @@ async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []
   }
 
   const msg = String(mensajeUsuario || '').trim();
+  // CRÍTICO: solo cuentan las chicas NOMBRADAS EN EL MENSAJE del usuario.
+  // No usar bloques del turno (pueden responder hermanas que no están en la acción).
   const delMensaje = detectarChicasEnTexto(msg);
   const deBloques = [...new Set((nombresBloques || []).filter((n) => n && n !== 'Aldo' && n !== 'Sistema'))];
-  // Unir chicas del mensaje + bloques (el mensaje manda para el tamaño de escena)
-  const presentes = [...new Set([...delMensaje, ...deBloques])];
-  const tamano = clasificarTamanoEscena(Math.max(delMensaje.length, presentes.length >= 2 ? presentes.length : delMensaje.length));
+  const tamano = clasificarTamanoEscena(delMensaje.length);
   log('Escena compartida: chicasMsg=', delMensaje.join(','), 'bloques=', deBloques.join(','), '→', tamano);
 
-  // 1) Match local primero (tags largos tipo follo_a_nino_doggystyle_mientras_...)
-  const local = matchLocalEscenaCompartida(disponibles, msg, delMensaje.length >= 2 ? delMensaje : presentes);
+  // Sin 2+ chicas en el mensaje → no hay imagen compartida (evita reusar trío anterior)
+  if (delMensaje.length < 2 && !/\baldo\b/i.test(msg)) {
+    log('Compartida: mensaje con <2 chicas → null (individuales)');
+    return null;
+  }
+
+  // 1) Match local solo con chicas del MENSAJE
+  const local = matchLocalEscenaCompartida(disponibles, msg, delMensaje);
   if (local && local.url) {
     return getGrupalPorTag(local.tag) || getParejaPorTag(local.tag) || getMultiHombresPorTag(local.tag) || local;
   }
@@ -2065,12 +2071,12 @@ export async function enviarMensaje(mensajeUsuario) {
     const msgLow = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
     const nombraAldoYChica = msgLow.includes('aldo') && chicasMsg.length >= 1;
 
-    // Con 2+ chicas (o Aldo+chica) SIEMPRE intentar match grupal/parejas/multi.
-    // Si hay tag exacto (ej. trío doggy+dedos), se usa. Si no hay match → individuales.
-    const convieneCompartida =
-      chicasMsg.length >= 2 || nombresBloques.length >= 2 || nombraAldoYChica;
+    // Compartida SOLO si el MENSAJE del usuario nombra 2+ chicas (o Aldo+chica).
+    // NO basarse en cuántas responden en bloques (si no, "follo a ichika en el aire"
+    // reutiliza el trío anterior porque Nino/Miku también hablan).
+    const convieneCompartida = chicasMsg.length >= 2 || nombraAldoYChica;
 
-    log('¿Intentar compartida?', convieneCompartida, 'chicas=', chicasMsg.join(','), 'bloques=', nombresBloques.join(','));
+    log('¿Intentar compartida?', convieneCompartida, 'chicasMsg=', chicasMsg.join(','), 'bloques=', nombresBloques.join(','));
 
     if (convieneCompartida) {
       const compartida = await elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques);
@@ -2104,15 +2110,21 @@ export async function enviarMensaje(mensajeUsuario) {
   if (parteConDesc) estado.outfitActual = { chica: parteConDesc.chica, tag: parteConDesc.imagen_tag, descripcion: parteConDesc.descripcionImg.trim() };
 
   // accionActual = continuidad del usuario CON su chica. No guardar actos solo entre NPCs (Aldo→Ichika).
-  // Continuidad: solo si hay UNA chica clara; en multi mixto no arrastrar doggy/grupal a la siguiente
+  // Continuidad: no guardar tags GRUPALES/largos (contaminan el siguiente turno 1-a-1)
   const partesChica = partes.filter((p) => p.chica && p.chica !== 'Aldo' && p.chica !== 'Sistema' && !p.esEventoHistoria);
-  const tagPrincipal = partesChica[0]?.imagen_tag;
+  const tagPrincipal = partesChica.find((p) => p.imagen_tag && p.imagen_tag !== 'hablando')?.imagen_tag
+    || partesChica[0]?.imagen_tag;
+  const esTagGrupalLargo = tagPrincipal && (
+    String(tagPrincipal).length > 40
+    || /_mientras_|_y_/.test(String(tagPrincipal))
+    || (detectarChicasEnTexto(String(tagPrincipal).replace(/_/g, ' ')).length >= 2)
+  );
   const multiMixtoTurno = partesChica.length >= 2 && new Set(partesChica.map((p) => p.imagen_tag)).size >= 2;
   if (mensajeEsAccionEntreOtros(mensajeUsuario) && !mensajeEsCorridaDelUsuario(mensajeUsuario)) {
     log('accionActual: acto entre otros → no actualizar');
-  } else if (multiMixtoTurno) {
+  } else if (multiMixtoTurno || esTagGrupalLargo) {
     estado.accionActual = null;
-    log('accionActual: multi mixto → sin continuidad global');
+    log('accionActual: multi/grupal → sin continuidad global');
   } else if (tagPrincipal && tagPrincipal !== 'hablando') {
     estado.accionActual = tagPrincipal;
   } else if (!escenaSex) {
