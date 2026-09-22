@@ -42,7 +42,21 @@ export const HISTORIAS = {
       imagenBienvenida: {
         tag: 'chupando_todo_el_pene'
         // Opcional forzar: url, audio, descripcion (como en imagenes.js)
-      }
+      },
+      eventos: [
+        {
+          id: 'foto_ichika_novio',
+          enMensaje: 4,
+          tipo: 'foto_celular',
+          de: 'Ichika',
+          texto: 'El celular de Nino vibra. Es Ichika: una foto de ella de rodillas, chupándole la pija a su novio, con una sonrisa pícara y el texto: "mirá lo que te perdés mientras estás con mi hermana~".',
+          imagen: {
+            tag: 'chupando_todo_el_pene'
+            // url / audio / descripcion opcionales
+          },
+          forzarReaccion: true
+        }
+      ]
     },
     {
       id: 'nino_despues_fiesta',
