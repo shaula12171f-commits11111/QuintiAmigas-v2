@@ -1,3 +1,4 @@
+// ============================================================
 //  Motor principal - QuintiAmigas v2
 //  Tags: Qwen elige el tag principal (se usa de verdad)
 //  + IA tag + Nakardas pasan a TESTING only
@@ -1439,80 +1440,123 @@ function slugEscena(texto) {
     .replace(/^_|_$/g, '');
 }
 
-/** Match local: tag que contenga los nombres de las chicas involucradas (+ keywords del mensaje). */
+/** Acciones clave del mensaje para no reusar un trío viejo (doggy vs standfuck vs anal). */
+function accionesClaveMensaje(msg) {
+  const t = String(msg || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const keys = [];
+  if (/\bstand\s*fuck|standfuck|de pie|contra la pared\b/.test(t)) keys.push('standfuck');
+  if (/\bdoggy|doggystyle|a cuatro\b/.test(t)) keys.push('doggy');
+  if (/\banal\b|por el culo|en el culo\b/.test(t)) keys.push('anal');
+  if (/\bdedo|concha|co[nñ]o|finger\b/.test(t)) keys.push('dedos');
+  if (/\bmamada|chup|oral|blow\b/.test(t)) keys.push('oral');
+  if (/\baire\b/.test(t)) keys.push('aire');
+  if (/\bmision|misionero\b/.test(t)) keys.push('misionero');
+  if (/\bcowgirl|vaquera\b/.test(t)) keys.push('cowgirl');
+  return keys;
+}
+
+function tagCubreAcciones(tag, accionesMsg) {
+  const tl = String(tag || '').toLowerCase();
+  if (!accionesMsg.length) return true;
+  // Cada acción del mensaje debería reflejarse en el tag (o al menos no contradecir)
+  const mapa = {
+    standfuck: [/stand/, /de_pie/, /pared/],
+    doggy: [/doggy/, /doggystyle/, /cuatro/],
+    anal: [/anal/, /culo/],
+    dedos: [/dedo/, /concha/, /coño/, /finger/],
+    oral: [/mamada/, /chup/, /oral/, /blow/],
+    aire: [/aire/],
+    misionero: [/mision/],
+    cowgirl: [/cowgirl/, /vaquera/]
+  };
+  let cubiertas = 0;
+  for (const a of accionesMsg) {
+    const pats = mapa[a] || [];
+    if (pats.some((p) => p.test(tl))) cubiertas++;
+  }
+  // Contradicciones fuertes: mensaje pide standfuck y tag es solo doggy sin stand
+  if (accionesMsg.includes('standfuck') && /doggy/.test(tl) && !/stand/.test(tl)) return false;
+  if (accionesMsg.includes('doggy') && /stand/.test(tl) && !/doggy/.test(tl)) return false;
+  if (accionesMsg.includes('anal') && !/anal|culo/.test(tl) && accionesMsg.length >= 2) {
+    // si hay anal en el mensaje y el tag no lo menciona, no es match de escena completa
+    return false;
+  }
+  // Debe cubrir al menos la mayoría de acciones distintas del mensaje
+  return cubiertas >= Math.ceil(accionesMsg.length * 0.7);
+}
+
+/** Match local: tag que contenga los nombres + las MISMAS acciones (no reusar trío viejo). */
 function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
   if (!disponibles.length || chicas.length < 2) return null;
   const msg = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   const slugMsg = slugEscena(mensajeUsuario);
   const names = chicas.map((c) => c.toLowerCase());
+  const accionesMsg = accionesClaveMensaje(mensajeUsuario);
 
-  // 0) Match casi exacto: el mensaje slugificado ≈ el tag (tags largos de trío)
+  // 0) Match casi exacto por slug
   for (const e of disponibles) {
-    const tl = e.tag.toLowerCase();
     if (!e.url) continue;
+    const tl = e.tag.toLowerCase();
     if (slugMsg === tl || slugMsg.includes(tl) || tl.includes(slugMsg)) {
-      log('Match LOCAL exacto/slug:', e.tag);
-      return e;
+      if (tagCubreAcciones(tl, accionesMsg)) {
+        log('Match LOCAL exacto/slug:', e.tag);
+        return e;
+      }
     }
-    // solapamiento alto de tokens
     const tokTag = new Set(tl.split('_').filter((t) => t.length > 2));
     const tokMsg = new Set(slugMsg.split('_').filter((t) => t.length > 2));
     let inter = 0;
     for (const t of tokTag) if (tokMsg.has(t)) inter++;
     const ratio = tokTag.size ? inter / tokTag.size : 0;
-    if (ratio >= 0.7 && names.filter((n) => tl.includes(n)).length >= Math.min(2, names.length)) {
-      log('Match LOCAL por tokens:', e.tag, 'ratio=', ratio.toFixed(2));
-      return e;
+    if (ratio >= 0.75 && names.filter((n) => tl.includes(n)).length >= Math.min(2, names.length)) {
+      if (tagCubreAcciones(tl, accionesMsg)) {
+        log('Match LOCAL por tokens:', e.tag, 'ratio=', ratio.toFixed(2));
+        return e;
+      }
+      log('Match LOCAL descartado (acciones no cubren):', e.tag, 'msgAcciones=', accionesMsg.join(','));
     }
   }
 
-  // 1) Todos los nombres de chicas aparecen en el tag
+  // 1) Candidatos con todos los nombres
   let candidatos = disponibles.filter((e) => {
     const tl = e.tag.toLowerCase();
-    return names.every((n) => tl.includes(n));
+    return e.url && names.every((n) => tl.includes(n));
   });
-
-  // 2) Si no, al menos 2 nombres en el tag
   if (!candidatos.length) {
     candidatos = disponibles.filter((e) => {
       const tl = e.tag.toLowerCase();
-      return names.filter((n) => tl.includes(n)).length >= 2;
+      return e.url && names.filter((n) => tl.includes(n)).length >= 2;
     });
   }
-
-  if (!candidatos.length) return null;
-
-  const keywords = [];
-  if (/doggy|a cuatro/.test(msg)) keywords.push('doggy', 'doggystyle');
-  if (/dedo|concha|squirt|finger/.test(msg)) keywords.push('dedo', 'concha', 'dedos');
-  if (/mam|chup|oral|blow/.test(msg)) keywords.push('mamada', 'blowjob', 'chup');
-  if (/aire/.test(msg)) keywords.push('aire');
-  if (/handjob|paja/.test(msg)) keywords.push('handjob', 'paja');
+  // Filtrar por acciones
+  candidatos = candidatos.filter((e) => tagCubreAcciones(e.tag, accionesMsg));
+  if (!candidatos.length) {
+    log('Match LOCAL: sin candidato que cubra acciones', accionesMsg.join(','));
+    return null;
+  }
 
   let best = null;
   let bestScore = -1;
   for (const e of candidatos) {
     const tl = e.tag.toLowerCase();
     let score = names.filter((n) => tl.includes(n)).length * 10;
-    for (const k of keywords) {
-      if (tl.includes(k)) score += 3;
+    for (const a of accionesMsg) {
+      if (tl.includes(a) || (a === 'dedos' && /dedo|concha/.test(tl)) || (a === 'doggy' && /doggy/.test(tl))) score += 8;
     }
-    if (names.length === 3 && names.every((n) => tl.includes(n))) score += 15;
+    if (names.length === 3 && names.every((n) => tl.includes(n))) score += 5;
     if (score > bestScore) {
       bestScore = score;
       best = e;
     }
   }
-  if (best && bestScore >= 20) {
-    log('Match LOCAL escena compartida:', best.tag, 'score=', bestScore);
+  if (best && bestScore >= 25) {
+    log('Match LOCAL escena compartida:', best.tag, 'score=', bestScore, 'acciones=', accionesMsg.join(','));
     return best;
   }
-  if (candidatos.length === 1 && names.every((n) => candidatos[0].tag.toLowerCase().includes(n))) {
-    log('Match LOCAL único con todos los nombres:', candidatos[0].tag);
-    return candidatos[0];
-  }
-  return bestScore >= 20 ? best : null;
+  log('Match LOCAL: score bajo, no forzar grupal', bestScore);
+  return null;
 }
+
 
 
 /** Tags “fuertes”: vale la pena alinear el texto con la imagen. */
@@ -1619,10 +1663,10 @@ Debés elegir UN tag de la lista que represente TODA la escena, o "ninguno".
 
 Reglas:
 1) SOLO un tag exacto de la lista, o la palabra ninguno.
-2) Si es TRIO/CUARTETO/QUINTETO, preferí tags que nombren a ESAS chicas y la acción (doggy, dedos, mamada, etc.).
-3) NO elijas un DUO si el usuario nombró 3+ chicas, salvo que no haya otro tag.
-4) Si la escena es 1 chica + 2 hombres (Aldo), preferí multi_hombres.
-5) Si NINGÚN tag cubre la escena, respondé: ninguno
+2) El tag debe cubrir TODAS las acciones distintas del mensaje (ej. standfuck + dedos + anal). Si el tag es doggy+dedos pero el usuario pidió standfuck y anal, respondé: ninguno.
+3) NO reutilices un trío viejo solo porque coinciden los nombres.
+4) Si es TRIO, preferí tags que nombren a ESAS chicas y LAS acciones correctas.
+5) Si NINGÚN tag cubre la escena completa, respondé: ninguno (mejor individuales que imagen incorrecta).
 6) NO inventes tags. SOLO el tag o ninguno.`;
 
   const user = `MENSAJE DEL USUARIO:
