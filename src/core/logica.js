@@ -1947,12 +1947,11 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.chicasActivas.length > 1) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
-    system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes: ${estado.chicasActivas.join(', ')}.`;
-    system += `\nSi el usuario mencionó a alguno haciendo algo, generá bloques [Nombre]: para la principal Y los mencionados.`;
-    system += `\nREGLA DE ROBO DE ESCENA (CRÍTICO): Si el usuario nombra el acto con UNA sola chica (ej. "follo a Ichika en el aire"), SOLO esa chica describe el acto sexual.`;
-    system += `\nLas demás PUEDEN reaccionar (celos, mirar, comentar) pero PROHIBIDO describirse a sí mismas siendo penetradas, en el aire, en doggy, etc. si el usuario no las nombró para eso.`;
-    system += `\nEjemplo mal: usuario dice "follo a Ichika en el aire" y Nino escribe que a ELLA la levantan en el aire.`;
-    system += `\nEjemplo bien: [Ichika]: acto en el aire... [Nino]: *mira con celos* "¡Oye, yo también estoy acá, idiota!"`;
+    system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes (TODOS deben hablar): ${estado.chicasActivas.join(', ')}.`;
+    system += `\nOBLIGATORIO: un bloque [Nombre]: por CADA presente. Nadie desaparece del turno aunque el usuario no la nombre en el acto.`;
+    system += `\nSi el usuario solo actúa con algunas, las otras REACCIONAN (celos, mirar, comentar, tocarse, pedir turno). No las omitas.`;
+    system += `\nREGLA DE ROBO DE ESCENA: solo las nombradas en el acto describen la penetración/pose. Las demás no se inventan el mismo acto.`;
+    system += `\nEjemplo: usuario "standfuck a Nino y Miku" con Ichika presente → [Nino]: standfuck... [Miku]: standfuck... [Ichika]: *mira con celos/interés* reacciona sin desaparecer.`;
   }
 
   const intencion = resolverIntencionUsuario(mensajeUsuario);
@@ -2015,6 +2014,22 @@ export async function enviarMensaje(mensajeUsuario) {
   actualizarRelacionAutomatica(mensajeUsuario, parsed.respuesta);
 
   let bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
+
+  // Multi: si falta alguna chica activa, agregar reacción corta (no desaparecer del trío)
+  if (estado.chicasActivas.length > 1 && !eventoHistoria) {
+    const ya = new Set(bloques.map((b) => b.chica));
+    for (const c of estado.chicasActivas) {
+      if (!c || c === 'Aldo' || ya.has(c)) continue;
+      const nombranActo = detectarChicasEnTexto(mensajeUsuario);
+      const ellaEnActo = nombranActo.some((n) => n.toLowerCase() === c.toLowerCase());
+      if (ellaEnActo) continue; // debería haber hablado; no inventar acto
+      bloques.push({
+        chica: c,
+        texto: `*se queda en la escena, mirando* "Oye... yo también estoy acá." `
+      });
+      log('Multi: se agregó reacción faltante de', c);
+    }
+  }
 
   // Evento historia: parsear [Chica_ANTES] / [Chica_DESPUES]
   if (eventoHistoria && eventoHistoria.texto) {
