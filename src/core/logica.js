@@ -68,6 +68,8 @@ let estado = {
   keyIndex: 0,
   modo: 'libre',
   historiaId: null,
+  eventosDisparados: [],   // ids de eventos de historia ya disparados en esta partida
+
   outfitActual: null,       // legacy: { chica, tag, descripcion }
   accionActual: null,
   relacion: RELACION.DESCONOCIDA,
@@ -529,6 +531,7 @@ export function exportarEstadoCompleto() {
     relacion: estado.relacion,
     modo: estado.modo,
     historiaId: estado.historiaId,
+    eventosDisparados: [...(estado.eventosDisparados || [])],
     accionActual: estado.accionActual,
     outfitActual: estado.outfitActual ? { ...estado.outfitActual } : null,
     mensajesCount: estado.mensajesCount || 0,
@@ -551,6 +554,7 @@ export function restaurarEstadoCompleto(snap) {
   estado.relacion = snap.relacion || RELACION.DESCONOCIDA;
   estado.modo = snap.modo || 'libre';
   estado.historiaId = snap.historiaId || null;
+  estado.eventosDisparados = Array.isArray(snap.eventosDisparados) ? [...snap.eventosDisparados] : [];
   estado.accionActual = snap.accionActual || null;
   estado.outfitActual = snap.outfitActual ? { ...snap.outfitActual } : null;
   estado.mensajesCount = snap.mensajesCount || 0;
@@ -590,6 +594,7 @@ export async function iniciarChatLasCinco() {
   estado.hechos = [];
   estado.modo = 'multi5';
   estado.historiaId = null;
+  estado.eventosDisparados = [];
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
@@ -625,6 +630,7 @@ export function iniciarChatLibre(chica) {
   estado.hechos = [];
   estado.modo = 'libre';
   estado.historiaId = null;
+  estado.eventosDisparados = [];
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
@@ -647,6 +653,7 @@ export function iniciarHistoria(chica, historiaId) {
   estado.hechos = [];
   estado.modo = 'historia';
   estado.historiaId = historiaId;
+  estado.eventosDisparados = [];
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.CONOCIDA; // en historias ya se conocen un poco
@@ -1726,11 +1733,76 @@ Escribí el resumen actualizado:`;
   }
 }
 
+
+/** Resuelve media de un evento de historia (tag y/o url). */
+function resolverMediaEventoHistoria(chicaPrincipal, imagenCfg) {
+  const cfg = imagenCfg || {};
+  let media = { url: '', audio: '', descripcion: '', tag: cfg.tag || '' };
+  if (cfg.tag) {
+    try {
+      media = resolverImagen(chicaPrincipal, cfg.tag, false) || media;
+      media.tag = cfg.tag;
+    } catch (_) {}
+  }
+  if (cfg.url) media.url = cfg.url;
+  if (cfg.audio != null && cfg.audio !== '') media.audio = cfg.audio;
+  if (cfg.descripcion) media.descripcion = cfg.descripcion;
+  return media;
+}
+
+/**
+ * Si estamos en historia y toca un evento en este nº de mensaje de usuario, lo devuelve y marca disparado.
+ * numMensaje = mensajes del usuario en esta partida (1 = primer mensaje del usuario).
+ */
+function consumirEventoHistoriaSiToca(numMensaje) {
+  if (estado.modo !== 'historia' || !estado.historiaId || !estado.chica) return null;
+  let h;
+  try {
+    h = getHistoria(estado.chica, estado.historiaId);
+  } catch (_) {
+    return null;
+  }
+  if (!h || !Array.isArray(h.eventos) || !h.eventos.length) return null;
+
+  const disparados = new Set(estado.eventosDisparados || []);
+  for (const ev of h.eventos) {
+    if (!ev || typeof ev.enMensaje !== 'number') continue;
+    const eid = String(ev.id || `${estado.historiaId}_msg${ev.enMensaje}`);
+    if (disparados.has(eid)) continue;
+    if (ev.enMensaje !== numMensaje) continue;
+
+    // Marcar como disparado
+    estado.eventosDisparados = [...disparados, eid];
+    const media = resolverMediaEventoHistoria(estado.chica, ev.imagen);
+    const de = ev.de || 'Sistema';
+    const texto = rellenarNombre(String(ev.texto || '').trim(), estado.nombreUsuario);
+    log('Evento historia disparado:', eid, 'enMensaje=', numMensaje);
+    return {
+      id: eid,
+      tipo: ev.tipo || 'evento',
+      de,
+      texto,
+      forzarReaccion: !!ev.forzarReaccion,
+      imagenUrl: media.url || '',
+      audioUrl: media.audio || '',
+      descripcionImg: media.descripcion || '',
+      imagen_tag: media.tag || '',
+      raw: ev
+    };
+  }
+  return null;
+}
+
+
 export async function enviarMensaje(mensajeUsuario) {
   if (!estado.chica) throw new Error('Selecciona una chica primero');
   try { await ensureImagenesLoaded(); } catch (_) {}
 
   estado.ultimoMensajeUsuario = mensajeUsuario;
+
+  // Nº de mensaje del usuario en esta partida (la bienvenida no cuenta)
+  const numMensajeUsuario = (estado.mensajesCount || 0) + 1;
+  const eventoHistoria = consumirEventoHistoriaSiToca(numMensajeUsuario);
 
   // Contador de sexo + flag eyaculación rápida (Nino/Ichika/Yotsuba)
   actualizarContadorSexoYEyaculacion(mensajeUsuario, estado.accionActual);
@@ -1753,6 +1825,17 @@ export async function enviarMensaje(mensajeUsuario) {
   // Lore deshabilitado temporalmente (standby) — ver README.
   const personalidad = getPersonalidad(estado.chica, estado.nombreUsuario);
   let system = armarSystemPrompt(personalidad, estado.nombreUsuario, construirContexto(mensajeUsuario), [], '', []);
+  if (eventoHistoria && eventoHistoria.texto) {
+    system += `\n\n## EVENTO OBLIGATORIO DE LA HISTORIA (este turno)\n`;
+    system += `Acaba de ocurrir esto (el usuario y ${estado.chica} lo perciben ahora):\n`;
+    system += `"""${eventoHistoria.texto}"""\n`;
+    if (eventoHistoria.de) system += `Origen/quién interviene: ${eventoHistoria.de}.\n`;
+    if (eventoHistoria.forzarReaccion) {
+      system += `OBLIGATORIO: ${estado.chica} DEBE reaccionar a este evento en su diálogo y acciones (celos, rabia, sorpresa, etc. según personalidad). No lo ignores ni lo dejes pasar sin comentar.\n`;
+    }
+    system += `Podés seguir la acción sexual en curso, pero integrando la reacción al evento.\n`;
+    log('System: evento historia inyectado', eventoHistoria.id);
+  }
   if (estado.chicasActivas.length > 1) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
@@ -1973,19 +2056,33 @@ export async function enviarMensaje(mensajeUsuario) {
     partes: partes.map((p) => `${p.chica}: tag=${p.imagen_tag}`).join(' | ')
   });
 
+  // Si hubo evento de historia, anteponer una parte "Sistema" / narrador para la UI
+  if (eventoHistoria && eventoHistoria.texto) {
+    partes.unshift({
+      chica: eventoHistoria.de || 'Sistema',
+      texto: eventoHistoria.texto,
+      imagenUrl: eventoHistoria.imagenUrl || '',
+      audioUrl: eventoHistoria.audioUrl || '',
+      descripcionImg: eventoHistoria.descripcionImg || '',
+      imagen_tag: eventoHistoria.imagen_tag || '',
+      esEventoHistoria: true
+    });
+  }
+
   return {
     partes,
     texto: parsed.respuesta,
-    imagen_tag: partes[0]?.imagen_tag || 'hablando',
-    imagenUrl: partes[0]?.imagenUrl || '',
-    audioUrl: partes[0]?.audioUrl || '',
-    descripcionImg: partes[0]?.descripcionImg || '',
+    imagen_tag: partes.find((p) => !p.esEventoHistoria)?.imagen_tag || partes[0]?.imagen_tag || 'hablando',
+    imagenUrl: partes.find((p) => !p.esEventoHistoria)?.imagenUrl || partes[0]?.imagenUrl || '',
+    audioUrl: partes.find((p) => !p.esEventoHistoria)?.audioUrl || '',
+    descripcionImg: partes.find((p) => !p.esEventoHistoria)?.descripcionImg || '',
     fase: estado.fase,
     relacion: estado.relacion,
     ubicacion: estado.ubicacion,
     fondoLugar: getFondoLugar(estado.ubicacion),
     chica: estado.chica,
-    chicasActivas: [...estado.chicasActivas]
+    chicasActivas: [...estado.chicasActivas],
+    eventoHistoria: eventoHistoria || null
   };
 }
 
@@ -2013,6 +2110,7 @@ export function resetChat() {
   estado.chicasActivas = estado.chica ? [estado.chica] : [];
   estado.modo = 'libre';
   estado.historiaId = null;
+  estado.eventosDisparados = [];
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
@@ -2034,6 +2132,7 @@ export function volverAlSelector() {
   estado.hechos = [];
   estado.modo = 'libre';
   estado.historiaId = null;
+  estado.eventosDisparados = [];
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
