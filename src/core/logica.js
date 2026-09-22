@@ -1773,8 +1773,9 @@ function consumirEventoHistoriaSiToca(numMensaje) {
 
     // Marcar como disparado
     estado.eventosDisparados = [...disparados, eid];
-    const media = resolverMediaEventoHistoria(estado.chica, ev.imagen);
     const de = ev.de || 'Sistema';
+    // Imagen del evento: resolver con la chica del evento (ej. Ichika), no la principal
+    const media = resolverMediaEventoHistoria(de !== 'Sistema' ? de : estado.chica, ev.imagen);
     const texto = rellenarNombre(String(ev.texto || '').trim(), estado.nombreUsuario);
     log('Evento historia disparado:', eid, 'enMensaje=', numMensaje);
     return {
@@ -1827,13 +1828,13 @@ export async function enviarMensaje(mensajeUsuario) {
   let system = armarSystemPrompt(personalidad, estado.nombreUsuario, construirContexto(mensajeUsuario), [], '', []);
   if (eventoHistoria && eventoHistoria.texto) {
     system += `\n\n## EVENTO OBLIGATORIO DE LA HISTORIA (este turno)\n`;
-    system += `Acaba de ocurrir esto (el usuario y ${estado.chica} lo perciben ahora):\n`;
-    system += `"""${eventoHistoria.texto}"""\n`;
-    if (eventoHistoria.de) system += `Origen/quién interviene: ${eventoHistoria.de}.\n`;
+    system += `IMPORTANTE: El mensaje de ${eventoHistoria.de || 'otra persona'} (foto/texto del celular) se muestra SOLO en un mensaje aparte en la UI. `;
+    system += `NO copies ni reescribas el texto completo de la foto/mensaje en tu respuesta. NO digas "mi celular vibra" con el texto entero de Ichika.\n`;
+    system += `Resumen de lo que pasó (solo para que sepas): ${eventoHistoria.texto.slice(0, 280)}\n`;
     if (eventoHistoria.forzarReaccion) {
-      system += `OBLIGATORIO: ${estado.chica} DEBE reaccionar a este evento en su diálogo y acciones (celos, rabia, sorpresa, etc. según personalidad). No lo ignores ni lo dejes pasar sin comentar.\n`;
+      system += `OBLIGATORIO: ${estado.chica} DEBE reaccionar con celos/rabia/posesividad según su personalidad, EN POCAS LÍNEAS, sin narrar de nuevo la foto.\n`;
     }
-    system += `Podés seguir la acción sexual en curso, pero integrando la reacción al evento.\n`;
+    system += `Podés seguir el acto en curso + reacción corta al mensaje.\n`;
     log('System: evento historia inyectado', eventoHistoria.id);
   }
   if (estado.chicasActivas.length > 1) {
@@ -2003,7 +2004,7 @@ export async function enviarMensaje(mensajeUsuario) {
         // Aplicar a todas las chicas del turno (escena compartida)
         let aplicadas = 0;
         for (const p of partes) {
-          if (!p.chica || p.chica === 'Aldo' || p.chica === 'Sistema') continue;
+          if (!p.chica || p.chica === 'Aldo' || p.chica === 'Sistema' || p.esEventoHistoria) continue;
           p.imagenUrl = compartida.url;
           p.audioUrl = compartida.audio || p.audioUrl || '';
           p.descripcionImg = compartida.descripcion || p.descripcionImg || '';
@@ -2058,6 +2059,8 @@ export async function enviarMensaje(mensajeUsuario) {
 
   // Si hubo evento de historia, anteponer una parte "Sistema" / narrador para la UI
   if (eventoHistoria && eventoHistoria.texto) {
+    log('UI evento historia aparte:', eventoHistoria.de, 'img=', !!(eventoHistoria.imagenUrl), eventoHistoria.imagen_tag);
+    // Mensaje SEPARADO (antes que Nino/etc.): quien manda la foto/texto
     partes.unshift({
       chica: eventoHistoria.de || 'Sistema',
       texto: eventoHistoria.texto,
