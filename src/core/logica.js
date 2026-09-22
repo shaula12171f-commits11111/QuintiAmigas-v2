@@ -62,7 +62,7 @@ let estado = {
   chica: null,
   chicasActivas: [],
   historial: [],            // se guarda localmente (memorias/UI); YA NO se manda completo a la IA
-  resumenConversacion: '',  // resumen progresivo = único contexto histórico enviado a la IA
+  resumenConversacion: '',  // resumen progresivo + últimos N mensajes completos = contexto histórico
   nombreUsuario: NOMBRE_USUARIO_DEFAULT || 'Fabrizio',
   hechos: [],
   keyIndex: 0,
@@ -82,6 +82,8 @@ let estado = {
 };
 
 const MAX_HISTORIAL = 20;
+/** Cuántos mensajes recientes completos se mandan además del resumen (2 = último par user+bot). */
+const ULTIMOS_MENSAJES_CONTEXTO = 2;
 const PATRON_LUGAR_PRIVADO = /\b(hotel|motel|habitaci[oó]n|casa|departamento|depto|pieza|cuarto|mi casa|tu casa|a solas|lugar m[aá]s privado)\b/i;
 const PATRON_CONFIRMACION = /\b(s[ií]|claro|vamos|dale|quiero|contin[uú]a|continuar|foll|chup|besame|t[oó]came|hazlo|hacelo|por favor|ya)\b/i;
 const PATRON_NEGACION = /\b(no|para|espera|despacio|mejor no|ahora no)\b/i;
@@ -772,6 +774,20 @@ function actualizarFaseYLugar(mensaje) {
   }
 }
 
+
+/** Últimos N mensajes del historial local para mandar completos a la IA (además del resumen). */
+function obtenerMensajesRecientesParaIA(n = ULTIMOS_MENSAJES_CONTEXTO) {
+  const h = Array.isArray(estado.historial) ? estado.historial : [];
+  if (!h.length || n <= 0) return [];
+  const slice = h.slice(-n);
+  return slice
+    .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && String(m.content || '').trim())
+    .map((m) => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: String(m.content || '').slice(0, 2000) // tope por mensaje por tokens
+    }));
+}
+
 function construirContexto(mensajeUsuarioActual = '') {
   const lineas = [
     `Fase: ${estado.fase}`,
@@ -781,7 +797,7 @@ function construirContexto(mensajeUsuarioActual = '') {
     `Presentes: ${estado.chicasActivas.join(', ')}`
   ];
   if (estado.resumenConversacion && estado.resumenConversacion.trim()) {
-    lineas.push('### RESUMEN DE LA CONVERSACIÓN (contexto histórico)');
+    lineas.push('### RESUMEN DE LA CONVERSACIÓN (lo anterior comprimido; el diálogo reciente va aparte como mensajes)');
     lineas.push(estado.resumenConversacion.trim());
   }
   if (estado.ubicacion) {
@@ -1708,17 +1724,22 @@ export async function enviarMensaje(mensajeUsuario) {
     accionActual: estado.accionActual
   });
 
-  // Solo system (incluye resumen) + mensaje actual. YA NO se manda el historial completo.
+  // System (resumen + estado) + últimos N mensajes completos + mensaje actual.
+  // No se manda todo el historial: solo resumen + ventana reciente.
+  const recientes = obtenerMensajesRecientesParaIA(ULTIMOS_MENSAJES_CONTEXTO);
   const messages = [
     { role: 'system', content: system },
+    ...recientes,
     { role: 'user', content: mensajeUsuario }
   ];
+  log('Contexto IA: resumen=' + ((estado.resumenConversacion || '').length) + ' chars, mensajes recientes=' + recientes.length);
   let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)' });
   let parsed = parseJsonRespuesta(raw);
   if (!parsed) {
     for (const extra of PROMPTS_REINTENTO) {
       raw = await llamarGroq([
         { role: 'system', content: system + '\n\n' + extra },
+        ...recientes,
         { role: 'user', content: mensajeUsuario },
         { role: 'assistant', content: raw || '' },
         { role: 'user', content: 'Corrige SOLO JSON.' }
