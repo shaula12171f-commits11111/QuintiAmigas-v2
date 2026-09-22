@@ -80,6 +80,12 @@ const CUARTETOS = {
 //  QUINTETOS (las 5)
 // ---------------------------------------------------------------------------
 const QUINTETOS = {
+  follo_a_nino_doggystyle_ya_folle_a_las_otras_4_sale_semen_de_las_conchas_De_ichika_miku_yotsuba_y_itsuki: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/follo_a_nino_doggystyle_ya_folle_a_las_otras_4_sale_semen_de_las_conchas_De_ichika_miku_yotsuba_y_itsuki.jpg',
+    descripcion: 'ya las folle a ichika miku yotsuba y itsuki estoy follando a la ultima nino. las otras 4 derraman semen de sus conchas. ichika esta boca abajo a la almohada una pierna al costado. itsuki boca arriba una pierna levantada. miku de costado piernas juntas. yotsuba patas arriba. y nino la follo doggystyle',
+    audio: ''
+  },
+
   // nino_ichika_miku_yotsuba_itsuki_quintuple_mamada: {
   //   url: 'https://...',
   //   descripcion: 'Las cinco mamando al usuario',
