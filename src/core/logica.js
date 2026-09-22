@@ -2031,32 +2031,64 @@ export async function enviarMensaje(mensajeUsuario) {
     });
   }
 
-  // === IMAGEN COMPARTIDA: Qwen elige entre grupales / parejas / multi hombres ===
+  // === IMAGEN COMPARTIDA: solo si la escena es UNA misma acción grupal, no acciones mixtas ===
   try {
-    const nombresBloques = partes.map((p) => p.chica).filter((c) => c && c !== 'Aldo' && c !== 'Sistema');
+    const nombresBloques = partes.map((p) => p.chica).filter((c) => c && c !== 'Aldo' && c !== 'Sistema' && !partes.find(x => x.chica === c && x.esEventoHistoria));
     const chicasMsg = detectarChicasEnTexto(mensajeUsuario);
-    const msgLow = String(mensajeUsuario || '').toLowerCase();
+    const msgLow = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
     const nombraAldoYChica = msgLow.includes('aldo') && chicasMsg.length >= 1;
-    const convieneCompartida = chicasMsg.length >= 2 || nombresBloques.length >= 2 || nombraAldoYChica;
-    log('¿Conviene imagen compartida?', convieneCompartida, 'chicasMsg=', chicasMsg.length, 'bloques=', nombresBloques.length);
+
+    // Acciones distintas por chica (doggy a una + dedos a otras) → NO imagen compartida
+    const focos = chicasMsg.map((c) => ({
+      c,
+      foco: extractAccionRelevanteParaChica(c, mensajeUsuario, chicasMsg)
+    }));
+    const focosUnicos = new Set(focos.map((f) => f.foco.toLowerCase().replace(/\s+/g, ' ').trim()));
+    const accionesMixtas = chicasMsg.length >= 2 && focosUnicos.size >= 2;
+    // "mientras" con verbos distintos suele ser mixto
+    const mientrasMixto = /\bmientras\b/.test(msgLow) && chicasMsg.length >= 2;
+
+    const convieneCompartida =
+      !accionesMixtas &&
+      !mientrasMixto &&
+      (chicasMsg.length >= 2 || nombresBloques.length >= 2 || nombraAldoYChica);
+
+    log(
+      '¿Compartida?',
+      convieneCompartida,
+      'mixtas=',
+      accionesMixtas,
+      'mientrasMixto=',
+      mientrasMixto,
+      'chicas=',
+      chicasMsg.join(',')
+    );
 
     if (convieneCompartida) {
       const compartida = await elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques);
       if (compartida && compartida.url) {
-        // Aplicar a todas las chicas del turno (escena compartida)
+        const tagLow = String(compartida.tag || '').toLowerCase();
+        // Solo pisar imagen de chicas que el TAG nombra (si el tag no nombra a nadie, aplicar a todas del mensaje)
+        const nombradasEnTag = chicasMsg.filter((c) => tagLow.includes(c.toLowerCase()));
+        const targets = nombradasEnTag.length ? nombradasEnTag : chicasMsg;
         let aplicadas = 0;
         for (const p of partes) {
           if (!p.chica || p.chica === 'Aldo' || p.chica === 'Sistema' || p.esEventoHistoria) continue;
+          if (targets.length && !targets.some((t) => t.toLowerCase() === String(p.chica).toLowerCase())) {
+            continue; // esta chica no está en la imagen compartida → deja su tag individual
+          }
           p.imagenUrl = compartida.url;
           p.audioUrl = compartida.audio || p.audioUrl || '';
           p.descripcionImg = compartida.descripcion || p.descripcionImg || '';
           p.imagen_tag = compartida.tag || p.imagen_tag;
           aplicadas++;
         }
-        log('Imagen compartida Qwen aplicada:', compartida.tag, 'tipo=', compartida.tipo, '→', aplicadas, 'chicas');
+        log('Imagen compartida aplicada:', compartida.tag, '→', aplicadas, 'de', targets.join(','));
       } else {
-        log('Imagen compartida Qwen → ninguno; se mantienen individuales');
+        log('Imagen compartida → ninguno; individuales');
       }
+    } else {
+      log('Sin compartida (acciones distintas por chica); cada una mantiene su tag individual');
     }
   } catch (e) {
     log('Imagen compartida error:', e?.message || e);
@@ -2066,10 +2098,15 @@ export async function enviarMensaje(mensajeUsuario) {
   if (parteConDesc) estado.outfitActual = { chica: parteConDesc.chica, tag: parteConDesc.imagen_tag, descripcion: parteConDesc.descripcionImg.trim() };
 
   // accionActual = continuidad del usuario CON su chica. No guardar actos solo entre NPCs (Aldo→Ichika).
-  const tagPrincipal = partes.find((p) => p.chica !== 'Aldo' && p.imagen_tag)?.imagen_tag;
+  // Continuidad: solo si hay UNA chica clara; en multi mixto no arrastrar doggy/grupal a la siguiente
+  const partesChica = partes.filter((p) => p.chica && p.chica !== 'Aldo' && p.chica !== 'Sistema' && !p.esEventoHistoria);
+  const tagPrincipal = partesChica[0]?.imagen_tag;
+  const multiMixtoTurno = partesChica.length >= 2 && new Set(partesChica.map((p) => p.imagen_tag)).size >= 2;
   if (mensajeEsAccionEntreOtros(mensajeUsuario) && !mensajeEsCorridaDelUsuario(mensajeUsuario)) {
-    // No pisar la acción usuario-chica con un acto ajeno; tampoco propagar a la próxima
-    log('accionActual: acto entre otros → no actualizar continuidad global');
+    log('accionActual: acto entre otros → no actualizar');
+  } else if (multiMixtoTurno) {
+    estado.accionActual = null;
+    log('accionActual: multi mixto → sin continuidad global');
   } else if (tagPrincipal && tagPrincipal !== 'hablando') {
     estado.accionActual = tagPrincipal;
   } else if (!escenaSex) {
