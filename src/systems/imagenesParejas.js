@@ -1,14 +1,12 @@
 // ============================================================
-//  Imágenes PAREJAS / escenas multi — QuintiAmigas v2
+//  Imágenes PAREJAS — QuintiAmigas v2
 //
-//  Escenas con varias personas (2+ chicas con el usuario, o
-//  usuario+chica + Aldo+chica, poses compartidas, etc.).
+//  Escenas compartidas / multi pose (ej. dos chicas en el aire con el usuario)
+//  o usuario+chica y Aldo+chica.
 //
-//  Tags legibles, ej:
-//    nino_ichika_follando_en_el_aire
-//    ichika_usuario_nino_aldo_parejas
+//  Ej: nino_ichika_follando_en_el_aire
+//      ichika_usuario_nino_aldo_parejas
 //
-//  El orden de nombres al buscar no importa (permutaciones).
 // ============================================================
 
 const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'];
@@ -176,7 +174,7 @@ export function resolverImagenParejasDesdeMensaje(mensajeUsuario, bloquesChicas 
   const chicas = extraerChicasParejas(mensajeUsuario, bloquesChicas);
   if (chicas.length < 2 && accion !== 'parejas') {
     // follando en el aire con 2 chicas hace falta 2
-    if (accion === 'follando_en_el_aire' && chicas.length < 2) return null;
+    if (accion === 'follando_en_el_aire' && chicas.length < 1) return null;
   }
   if (chicas.length < 2) return null;
 
