@@ -69,6 +69,7 @@ let estado = {
   modo: 'libre',
   historiaId: null,
   eventosDisparados: [],   // ids de eventos de historia ya disparados en esta partida
+  eventoPendienteReaccion: null, // evento mostrado; la chica reacciona en el SIGUIENTE turno
 
   outfitActual: null,       // legacy: { chica, tag, descripcion }
   accionActual: null,
@@ -532,6 +533,7 @@ export function exportarEstadoCompleto() {
     modo: estado.modo,
     historiaId: estado.historiaId,
     eventosDisparados: [...(estado.eventosDisparados || [])],
+    eventoPendienteReaccion: estado.eventoPendienteReaccion ? { ...estado.eventoPendienteReaccion } : null,
     accionActual: estado.accionActual,
     outfitActual: estado.outfitActual ? { ...estado.outfitActual } : null,
     mensajesCount: estado.mensajesCount || 0,
@@ -555,6 +557,7 @@ export function restaurarEstadoCompleto(snap) {
   estado.modo = snap.modo || 'libre';
   estado.historiaId = snap.historiaId || null;
   estado.eventosDisparados = Array.isArray(snap.eventosDisparados) ? [...snap.eventosDisparados] : [];
+  estado.eventoPendienteReaccion = snap.eventoPendienteReaccion || null;
   estado.accionActual = snap.accionActual || null;
   estado.outfitActual = snap.outfitActual ? { ...snap.outfitActual } : null;
   estado.mensajesCount = snap.mensajesCount || 0;
@@ -595,6 +598,7 @@ export async function iniciarChatLasCinco() {
   estado.modo = 'multi5';
   estado.historiaId = null;
   estado.eventosDisparados = [];
+  estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
@@ -631,6 +635,7 @@ export function iniciarChatLibre(chica) {
   estado.modo = 'libre';
   estado.historiaId = null;
   estado.eventosDisparados = [];
+  estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
@@ -654,6 +659,7 @@ export function iniciarHistoria(chica, historiaId) {
   estado.modo = 'historia';
   estado.historiaId = historiaId;
   estado.eventosDisparados = [];
+  estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.CONOCIDA; // en historias ya se conocen un poco
@@ -1826,16 +1832,27 @@ export async function enviarMensaje(mensajeUsuario) {
   // Lore deshabilitado temporalmente (standby) — ver README.
   const personalidad = getPersonalidad(estado.chica, estado.nombreUsuario);
   let system = armarSystemPrompt(personalidad, estado.nombreUsuario, construirContexto(mensajeUsuario), [], '', []);
+  // Evento de historia EN ESTE TURNO: dos bloques de la chica + mensaje ajeno en el medio
   if (eventoHistoria && eventoHistoria.texto) {
-    system += `\n\n## EVENTO OBLIGATORIO DE LA HISTORIA (este turno)\n`;
-    system += `IMPORTANTE: El mensaje de ${eventoHistoria.de || 'otra persona'} (foto/texto del celular) se muestra SOLO en un mensaje aparte en la UI. `;
-    system += `NO copies ni reescribas el texto completo de la foto/mensaje en tu respuesta. NO digas "mi celular vibra" con el texto entero de Ichika.\n`;
-    system += `Resumen de lo que pasó (solo para que sepas): ${eventoHistoria.texto.slice(0, 280)}\n`;
-    if (eventoHistoria.forzarReaccion) {
-      system += `OBLIGATORIO: ${estado.chica} DEBE reaccionar con celos/rabia/posesividad según su personalidad, EN POCAS LÍNEAS, sin narrar de nuevo la foto.\n`;
-    }
-    system += `Podés seguir el acto en curso + reacción corta al mensaje.\n`;
-    log('System: evento historia inyectado', eventoHistoria.id);
+    const de = eventoHistoria.de || 'Alguien';
+    system += `\n\n## EVENTO DE HISTORIA — FORMATO OBLIGATORIO ESTE TURNO\n`;
+    system += `El usuario verá 3 mensajes en este orden:\n`;
+    system += `1) ${estado.chica} responde al usuario y NOTA que le llegó algo al celular (vibra / notificación), SIN conocer aún el contenido.\n`;
+    system += `2) Mensaje de ${de} (lo pone el sistema; NO lo escribas vos).\n`;
+    system += `3) ${estado.chica} reacciona al contenido del mensaje de ${de} Y sigue la escena actual con el usuario.\n\n`;
+    system += `Contenido del mensaje de ${de} (solo para el bloque 3; NO lo copies literal en el bloque 1):\n"""${eventoHistoria.texto.slice(0, 400)}"""\n\n`;
+    system += `Respondé SOLO con este formato (dos bloques, nada más):\n`;
+    system += `[${estado.chica}_ANTES]: ... (usuario + "me llegó algo al celu", sin revelar la foto)\n`;
+    system += `[${estado.chica}_DESPUES]: ... (reacción a ${de} + seguir el acto/charla actual)\n`;
+    system += `PROHIBIDO inventar un bloque de ${de}. PROHIBIDO poner el texto de la foto en el bloque ANTES.\n`;
+    log('System: evento split ANTES/DESPUES', eventoHistoria.id);
+  } else if (estado.eventoPendienteReaccion && estado.eventoPendienteReaccion.texto) {
+    // Fallback legacy por si quedó pendiente de una versión anterior
+    const pend = estado.eventoPendienteReaccion;
+    system += `\n\n## REACCIÓN A EVENTO PREVIO\n`;
+    system += `Antes llegó: ${String(pend.texto).slice(0, 280)}\n`;
+    system += `${estado.chica} debe reaccionar a eso y al usuario. NO recopies el mensaje ajeno.\n`;
+    estado.eventoPendienteReaccion = null;
   }
   if (estado.chicasActivas.length > 1) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
@@ -1904,7 +1921,32 @@ export async function enviarMensaje(mensajeUsuario) {
   extraerHechos();
   actualizarRelacionAutomatica(mensajeUsuario, parsed.respuesta);
 
-  const bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
+  let bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
+
+  // Evento historia: parsear [Chica_ANTES] / [Chica_DESPUES]
+  if (eventoHistoria && eventoHistoria.texto) {
+    const rawTxt = String(parsed.respuesta || '');
+    const ch = estado.chica;
+    const reAntes = new RegExp('\\[' + ch + '_ANTES\\]\\s*:?\\s*', 'i');
+    const reDesp = new RegExp('\\[' + ch + '_DESPUES\\]\\s*:?\\s*', 'i');
+    const idxA = rawTxt.search(reAntes);
+    const idxD = rawTxt.search(reDesp);
+    if (idxA >= 0 && idxD >= 0 && idxD > idxA) {
+      const tAntes = rawTxt.slice(idxA, idxD).replace(reAntes, '').trim();
+      const tDesp = rawTxt.slice(idxD).replace(reDesp, '').trim()
+        .replace(new RegExp('\\[' + ch + '\\]\\s*:?', 'i'), '').trim();
+      bloques = [
+        { chica: ch, texto: tAntes || rawTxt, esAntesEvento: true },
+        { chica: ch, texto: tDesp || rawTxt, esDespuesEvento: true }
+      ];
+      log('Evento: bloques ANTES/DESPUES parseados');
+    } else {
+      // Fallback: un solo bloque de la chica; el evento igual se inserta en el medio duplicando reacción corta
+      log('Evento: no se pudo parsear ANTES/DESPUES, fallback 1 bloque');
+      bloques = [{ chica: ch, texto: rawTxt.replace(/^\[[^\]]+\]\s*:?\s*/i, '').trim(), esAntesEvento: true }];
+    }
+  }
+
   const ahoraSoloNoSex = soloMuestraUsuario ? false : !escenaSex && !(PATRON_SEXO.test(mensajeUsuario) || PATRON_ORAL.test(mensajeUsuario));
 
   const partes = [];
@@ -2059,9 +2101,8 @@ export async function enviarMensaje(mensajeUsuario) {
 
   // Si hubo evento de historia, anteponer una parte "Sistema" / narrador para la UI
   if (eventoHistoria && eventoHistoria.texto) {
-    log('UI evento historia aparte:', eventoHistoria.de, 'img=', !!(eventoHistoria.imagenUrl), eventoHistoria.imagen_tag);
-    // Mensaje SEPARADO (antes que Nino/etc.): quien manda la foto/texto
-    partes.unshift({
+    log('UI evento historia EN MEDIO (Nino → Ichika → Nino):', eventoHistoria.de, 'img=', !!(eventoHistoria.imagenUrl));
+    const parteEvento = {
       chica: eventoHistoria.de || 'Sistema',
       texto: eventoHistoria.texto,
       imagenUrl: eventoHistoria.imagenUrl || '',
@@ -2069,7 +2110,19 @@ export async function enviarMensaje(mensajeUsuario) {
       descripcionImg: eventoHistoria.descripcionImg || '',
       imagen_tag: eventoHistoria.imagen_tag || '',
       esEventoHistoria: true
-    });
+    };
+    // Insertar entre ANTES y DESPUES si hay 2+ partes de la chica principal
+    if (partes.length >= 2) {
+      const mid = [partes[0], parteEvento, ...partes.slice(1)];
+      partes.length = 0;
+      partes.push(...mid);
+    } else if (partes.length === 1) {
+      // Solo ANTES: evento + misma chica reacciona (re-use short prompt via duplicating with note - already in text)
+      partes.push(parteEvento);
+    } else {
+      partes.push(parteEvento);
+    }
+    estado.eventoPendienteReaccion = null; // todo en este turno
   }
 
   return {
@@ -2114,6 +2167,7 @@ export function resetChat() {
   estado.modo = 'libre';
   estado.historiaId = null;
   estado.eventosDisparados = [];
+  estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
@@ -2136,6 +2190,7 @@ export function volverAlSelector() {
   estado.modo = 'libre';
   estado.historiaId = null;
   estado.eventosDisparados = [];
+  estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
