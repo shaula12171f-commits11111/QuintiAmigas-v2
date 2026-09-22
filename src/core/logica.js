@@ -1306,6 +1306,143 @@ Respondé solo el tag:`;
  * Qwen elige UNA imagen compartida (grupal / parejas / multi hombres) o "ninguno".
  * Solo se llama si hay 2+ personajes o el mensaje nombra varias chicas / aldo+chica.
  */
+function detectarChicasEnTexto(texto) {
+  const t = String(texto || '').toLowerCase();
+  const todas = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'];
+  return todas.filter((c) => t.includes(c.toLowerCase()));
+}
+
+function clasificarTamanoEscena(nChicas) {
+  if (nChicas >= 5) return 'QUINTETO';
+  if (nChicas === 4) return 'CUARTETO';
+  if (nChicas === 3) return 'TRIO';
+  if (nChicas === 2) return 'DUO';
+  return 'INDIVIDUAL';
+}
+
+/** Match local: tag que contenga los nombres de las chicas involucradas (+ keywords del mensaje). */
+function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
+  if (!disponibles.length || chicas.length < 2) return null;
+  const msg = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const names = chicas.map((c) => c.toLowerCase());
+
+  // 1) Todos los nombres de chicas aparecen en el tag
+  let candidatos = disponibles.filter((e) => {
+    const tl = e.tag.toLowerCase();
+    return names.every((n) => tl.includes(n));
+  });
+
+  // 2) Si no, al menos 2 nombres en el tag y coinciden con las del mensaje
+  if (!candidatos.length) {
+    candidatos = disponibles.filter((e) => {
+      const tl = e.tag.toLowerCase();
+      const hit = names.filter((n) => tl.includes(n));
+      return hit.length >= 2;
+    });
+  }
+
+  if (!candidatos.length) return null;
+
+  // Preferir el que más keywords del mensaje tenga en el tag
+  const keywords = [];
+  if (/doggy|a cuatro/.test(msg)) keywords.push('doggy', 'doggystyle');
+  if (/dedo|concha|squirt|finger/.test(msg)) keywords.push('dedo', 'concha', 'dedos');
+  if (/mam|chup|oral|blow/.test(msg)) keywords.push('mamada', 'blowjob', 'chup');
+  if (/aire/.test(msg)) keywords.push('aire');
+  if (/handjob|paja/.test(msg)) keywords.push('handjob', 'paja');
+
+  let best = null;
+  let bestScore = -1;
+  for (const e of candidatos) {
+    const tl = e.tag.toLowerCase();
+    let score = names.filter((n) => tl.includes(n)).length * 10;
+    for (const k of keywords) {
+      if (tl.includes(k)) score += 3;
+    }
+    // bonus si el tamaño del tag sugiere el mismo N de chicas
+    if (names.length === 3 && /trio|triple|miku|ichika/.test(tl)) score += 2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = e;
+    }
+  }
+  if (best && bestScore >= 20) {
+    // al menos 2 nombres * 10
+    log('Match LOCAL escena compartida:', best.tag, 'score=', bestScore);
+    return best;
+  }
+  // Si hay un solo candidato con todos los nombres, usarlo igual
+  if (candidatos.length === 1 && names.every((n) => candidatos[0].tag.toLowerCase().includes(n))) {
+    log('Match LOCAL escena compartida (único con todos los nombres):', candidatos[0].tag);
+    return candidatos[0];
+  }
+  return bestScore >= 20 ? best : null;
+}
+
+
+/** Tags “fuertes”: vale la pena alinear el texto con la imagen. */
+function tagPideRearme(tag) {
+  const t = String(tag || '').toLowerCase();
+  if (!t || t === 'hablando' || t === 'normal') return false;
+  if (/enojada|alegre|triste|sonrojada|timida|seria|feliz|riendo|coqueta|nerviosa/.test(t) && !/foll|chup|mam|corro|semen|dedo|doggy|mision|cowgirl|anal|handjob|paja/.test(t)) {
+    return false;
+  }
+  return true;
+}
+
+async function rearmarTextoSegunTag(chica, textoOriginal, tag, mensajeUsuario) {
+  if (!tagPideRearme(tag)) return textoOriginal;
+  const texto = String(textoOriginal || '').trim();
+  if (texto.length < 20) return textoOriginal;
+
+  const system = `Ajustás un párrafo de roleplay erótico para que coincida con el TAG de imagen.
+Reglas:
+1) Mantené la personalidad de ${chica} y el sentido del texto.
+2) Incorporá de forma NATURAL lo que implica el tag (sin listar el nombre del tag).
+3) NO contradigas al usuario ni inventes otra escena.
+4) NO alargues mucho: mismo largo o un poco más.
+5) PROHIBIDO frases telegráficas ("La pija. Ahora.", "Es mía." sueltos). Oraciones naturales; variá el tono.
+6) Respondé SOLO el párrafo final, sin explicaciones.`;
+
+  const user = `CHICA: ${chica}
+TAG DE IMAGEN: ${tag}
+MENSAJE DEL USUARIO: """${String(mensajeUsuario || '').slice(0, 400)}"""
+TEXTO ACTUAL:
+"""${texto.slice(0, 1200)}"""
+
+Reescribí el texto alineado al tag:`;
+
+  try {
+    const raw = await llamarGroq(
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ],
+      {
+        model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : MODELO,
+        temperature: 0.55,
+        max_tokens: 500,
+        reasoning_effort: 'none',
+        reasoning_format: 'hidden',
+        proposito: 'rearme-texto-segun-tag'
+      }
+    );
+    let limpio = String(raw || '')
+      .replace(/<think>[\s\S]*?<\/think>/gi, '')
+      .replace(/<\/?think>/gi, '')
+      .trim()
+      .replace(/^["']|["']$/g, '')
+      .trim();
+    if (limpio.length < 15) return textoOriginal;
+    log('Texto rearmado según tag', tag, '(' + limpio.length + ' chars)');
+    return limpio;
+  } catch (e) {
+    log('Rearme texto falló, se deja original:', e?.message || e);
+    return textoOriginal;
+  }
+}
+
+
 async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []) {
   const disponibles = [
     ...listarGrupalesDisponibles(),
@@ -1318,25 +1455,41 @@ async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []
   }
 
   const msg = String(mensajeUsuario || '').trim();
-  const presentes = [...new Set((nombresBloques || []).filter((n) => n && n !== 'Aldo' && n !== 'Sistema'))];
+  const delMensaje = detectarChicasEnTexto(msg);
+  const deBloques = [...new Set((nombresBloques || []).filter((n) => n && n !== 'Aldo' && n !== 'Sistema'))];
+  // Unir chicas del mensaje + bloques (el mensaje manda para el tamaño de escena)
+  const presentes = [...new Set([...delMensaje, ...deBloques])];
+  const tamano = clasificarTamanoEscena(Math.max(delMensaje.length, presentes.length >= 2 ? presentes.length : delMensaje.length));
+  log('Escena compartida: chicasMsg=', delMensaje.join(','), 'bloques=', deBloques.join(','), '→', tamano);
+
+  // 1) Match local primero (tags largos tipo follo_a_nino_doggystyle_mientras_...)
+  const local = matchLocalEscenaCompartida(disponibles, msg, delMensaje.length >= 2 ? delMensaje : presentes);
+  if (local && local.url) {
+    return getGrupalPorTag(local.tag) || getParejaPorTag(local.tag) || getMultiHombresPorTag(local.tag) || local;
+  }
+
   const lista = disponibles.map((e) => e.tag).join(', ');
 
   const system = `Sos un selector de IMAGEN DE ESCENA compartida para roleplay erótico multi.
-El usuario describe una escena. Hay tags de imagen ya cargados (grupales, parejas, multi-hombres).
-Debés elegir UN tag de la lista que represente TODA la escena, o "ninguno" si ninguno encaja bien.
+El usuario describe una escena con VARIAS personas. Hay tags ya cargados.
+Tipo de escena detectado: ${tamano} (${delMensaje.length || presentes.length} chicas nombradas: ${(delMensaje.length ? delMensaje : presentes).join(', ') || '?'}).
+
+Debés elegir UN tag de la lista que represente TODA la escena, o "ninguno".
 
 Reglas:
-1) SOLO podés responder con un tag exacto de la lista, o la palabra ninguno.
-2) Si el usuario describe varias chicas / acciones combinadas (ej. doggy a una y dedos a otras), preferí un tag grupal/trío que cubra eso.
-3) Si la escena es 1 chica con 2+ hombres (usuario+Aldo), preferí tags multi_hombres.
-4) Si es pose compartida (ej. follando en el aire entre dos chicas), preferí parejas.
-5) Si NINGÚN tag de la lista describe bien la escena, respondé: ninguno
-6) NO inventes tags. NO expliques. SOLO el tag o ninguno.`;
+1) SOLO un tag exacto de la lista, o la palabra ninguno.
+2) Si es TRIO/CUARTETO/QUINTETO, preferí tags que nombren a ESAS chicas y la acción (doggy, dedos, mamada, etc.).
+3) NO elijas un DUO si el usuario nombró 3+ chicas, salvo que no haya otro tag.
+4) Si la escena es 1 chica + 2 hombres (Aldo), preferí multi_hombres.
+5) Si NINGÚN tag cubre la escena, respondé: ninguno
+6) NO inventes tags. SOLO el tag o ninguno.`;
 
   const user = `MENSAJE DEL USUARIO:
 """${msg.slice(0, 900)}"""
 
-PERSONAJES QUE RESPONDEN EN ESTE TURNO: ${presentes.join(', ') || '(desconocido)'}
+TIPO DE ESCENA: ${tamano}
+CHICAS NOMBRADAS: ${(delMensaje.length ? delMensaje : presentes).join(', ') || '(ninguna)'}
+PERSONAJES QUE RESPONDEN: ${deBloques.join(', ') || '(desconocido)'}
 
 TAGS DE ESCENA DISPONIBLES (elegí UNO o ninguno):
 ${lista}
@@ -1648,9 +1801,15 @@ export async function enviarMensaje(mensajeUsuario) {
       console.log('%c[emocion]', 'color:#22c55e', b.chica, '→', emo);
     }
 
+    // Alinear texto con el tag de imagen (inmersión)
+    let textoFinal = b.texto;
+    try {
+      textoFinal = await rearmarTextoSegunTag(b.chica, b.texto, media.tag || tagFinal, mensajeUsuario);
+    } catch (_) {}
+
     partes.push({
       chica: b.chica,
-      texto: b.texto,
+      texto: textoFinal,
       imagenUrl: media.url,
       audioUrl: media.audio || '',
       descripcionImg: media.descripcion || '',
@@ -1661,10 +1820,11 @@ export async function enviarMensaje(mensajeUsuario) {
   // === IMAGEN COMPARTIDA: Qwen elige entre grupales / parejas / multi hombres ===
   try {
     const nombresBloques = partes.map((p) => p.chica).filter((c) => c && c !== 'Aldo' && c !== 'Sistema');
+    const chicasMsg = detectarChicasEnTexto(mensajeUsuario);
     const msgLow = String(mensajeUsuario || '').toLowerCase();
-    const nombraVarias = ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'].filter((n) => msgLow.includes(n)).length >= 2;
-    const nombraAldoYChica = msgLow.includes('aldo') && ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'].some((n) => msgLow.includes(n));
-    const convieneCompartida = nombresBloques.length >= 2 || nombraVarias || nombraAldoYChica;
+    const nombraAldoYChica = msgLow.includes('aldo') && chicasMsg.length >= 1;
+    const convieneCompartida = chicasMsg.length >= 2 || nombresBloques.length >= 2 || nombraAldoYChica;
+    log('¿Conviene imagen compartida?', convieneCompartida, 'chicasMsg=', chicasMsg.length, 'bloques=', nombresBloques.length);
 
     if (convieneCompartida) {
       const compartida = await elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques);
