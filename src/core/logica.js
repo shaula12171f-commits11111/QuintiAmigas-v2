@@ -1,4 +1,3 @@
-// ============================================================
 //  Motor principal - QuintiAmigas v2
 //  Tags: Qwen elige el tag principal (se usa de verdad)
 //  + IA tag + Nakardas pasan a TESTING only
@@ -1160,26 +1159,30 @@ function extractAccionRelevanteParaChica(chica, mensajeUsuario, otrasChicas = []
 
   const todas = ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'];
   const msgLow = msg.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
-  const nombraOtras = todas.filter((t) => t !== nombre).some((t) => msgLow.includes(t));
-  if (!nombraOtras) return msg;
+  const meNombran = msgLow.includes(nombre);
+  const otrasNombradas = todas.filter((t) => t !== nombre && msgLow.includes(t));
 
-  // Partir solo por conectores de escenas distintas (NO por "miku y ichika" = misma acción)
-  const trozos = msg.split(
-    /\s*(?:\bmientras(?:\s+que)?\b|\bal\s+mismo\s+tiempo\b|\ba\s+la\s+vez\b|(?<=[.!?;])\s+)/i
-  ).map((t) => t.trim()).filter(Boolean);
-
-  const conElla = trozos.filter((t) => t.toLowerCase().includes(nombre));
-  if (conElla.length) {
-    // Quitar de cada trozo menciones de otras chicas solo si el trozo es claramente de otra
-    // (si dice "dedos a miku y ichika", ambas se quedan con ese trozo entero)
-    return conElla.join(' | ').slice(0, 500);
+  // El usuario solo nombra a OTRA(s) chica(s), no a esta → NO heredar el acto
+  if (!meNombran && otrasNombradas.length >= 1) {
+    return (
+      `SIN_ACCION_PARA_${chica.toUpperCase()}. ` +
+      `El usuario actúa solo con: ${otrasNombradas.join(', ')}. ` +
+      `${chica} NO está en el acto. PROHIBIDO tag de follar/doggy/aire/oral. ` +
+      `Solo reacción (celos, mirar, hablar) → preferí hablando/enojada/sonrojada.`
+    );
   }
 
-  // Nombre no aparece: no heredar doggy/oral de otra
-  return (
-    `(El usuario no describió acción explícita para ${chica}. ` +
-    `NO copies doggy/oral/pose de otra chica. Elegí tag según lo que ${chica} hace en SU respuesta.)`
-  ).slice(0, 500);
+  // Varias chicas en el mensaje incluyendo a esta: partir por "mientras"
+  if (meNombran && otrasNombradas.length >= 1) {
+    const trozos = msg.split(
+      /\s*(?:\bmientras(?:\s+que)?\b|\bal\s+mismo\s+tiempo\b|\ba\s+la\s+vez\b|(?<=[.!?;])\s+)/i
+    ).map((t) => t.trim()).filter(Boolean);
+    const conElla = trozos.filter((t) => t.toLowerCase().includes(nombre));
+    if (conElla.length) return conElla.join(' | ').slice(0, 500);
+  }
+
+  // Solo ella (o nadie por nombre): mensaje completo
+  return msg;
 }
 
 
@@ -1195,6 +1198,16 @@ async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = fal
   const msg = extractAccionRelevanteParaChica(chica, msgCompleto, otrasChicas) || msgCompleto;
   if (msg !== msgCompleto) {
     log('Tag foco por chica:', chica, '→', msg.slice(0, 120));
+  }
+  const sinAccionPropia = /SIN_ACCION_PARA_/i.test(msg);
+  if (sinAccionPropia) {
+    // No está en el acto del usuario → no sex-tag de pose
+    const emocion = /enoj|celos|furios/i.test(String(textoBot || '')) ? 'enojada'
+      : /sonroj|timid/i.test(String(textoBot || '')) ? 'sonrojada'
+      : 'hablando';
+    const tagSafe = normalizarTag(chica, emocion, true) || 'hablando';
+    log('Tag forzado (sin acción en mensaje):', chica, '→', tagSafe);
+    return { tag: tagSafe, razon: 'sin_accion_en_mensaje_usuario', fuente: 'local_multi' };
   }
   const msgLower = msg.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
 
@@ -1891,8 +1904,11 @@ export async function enviarMensaje(mensajeUsuario) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
     system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes: ${estado.chicasActivas.join(', ')}.`;
-    system += `\nSi el usuario mencionó a alguno de ellos haciendo algo (follando, mirando, hablando, etc.), DEBÉS generar bloques [Nombre]: para la chica principal Y para TODOS los mencionados.`;
-    system += `\nEjemplo: [Nino]: ... [Miku]: ... [Aldo]: ...  Nadie se queda sin hablar. Cada uno con su propia acción.`;
+    system += `\nSi el usuario mencionó a alguno haciendo algo, generá bloques [Nombre]: para la principal Y los mencionados.`;
+    system += `\nREGLA DE ROBO DE ESCENA (CRÍTICO): Si el usuario nombra el acto con UNA sola chica (ej. "follo a Ichika en el aire"), SOLO esa chica describe el acto sexual.`;
+    system += `\nLas demás PUEDEN reaccionar (celos, mirar, comentar) pero PROHIBIDO describirse a sí mismas siendo penetradas, en el aire, en doggy, etc. si el usuario no las nombró para eso.`;
+    system += `\nEjemplo mal: usuario dice "follo a Ichika en el aire" y Nino escribe que a ELLA la levantan en el aire.`;
+    system += `\nEjemplo bien: [Ichika]: acto en el aire... [Nino]: *mira con celos* "¡Oye, yo también estoy acá, idiota!"`;
   }
 
   const intencion = resolverIntencionUsuario(mensajeUsuario);
