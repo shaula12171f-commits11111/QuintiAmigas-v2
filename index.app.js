@@ -12,37 +12,41 @@ import {
 
 const $ = (id) => document.getElementById(id);
 const screens = ['screen-name', 'screen-select', 'screen-modo', 'screen-chat'];
-let chicaActual = null, busy = false, activeAudioEl = null;
+let chicaActual = null, busy = false;
+/** Audios que están sonando ahora (pueden ser varios a la vez). */
+let activeAudioEls = [];
 
 function show(id) { screens.forEach((s) => $(s)?.classList.toggle('active', s === id)); }
 function stopAllAudio() {
-  if (activeAudioEl) {
-    try { activeAudioEl.pause(); activeAudioEl.currentTime = 0; } catch (_) {}
-    activeAudioEl = null;
+  for (const a of activeAudioEls) {
+    try { a.pause(); a.currentTime = 0; } catch (_) {}
   }
+  activeAudioEls = [];
   document.querySelectorAll('#msgs audio').forEach((a) => {
     try { a.pause(); a.currentTime = 0; } catch (_) {}
   });
 }
 /** Reproduce audios en secuencia (autoplay tras enviar mensaje = gesto de usuario). */
-async function playAudioSequence(audioEls) {
+/** Reproduce varios audios a la VEZ (multi: cada chica suena en paralelo). */
+async function playAudioParallel(audioEls) {
   stopAllAudio();
-  for (const au of audioEls) {
-    if (!au || !au.src) continue;
-    activeAudioEl = au;
+  const list = (audioEls || []).filter((au) => au && au.src);
+  if (!list.length) return;
+  activeAudioEls = list;
+  await Promise.all(list.map(async (au) => {
     try {
       au.loop = false;
       au.currentTime = 0;
       await au.play();
-      await new Promise((resolve) => {
-        const done = () => { au.removeEventListener('ended', done); resolve(); };
-        au.addEventListener('ended', done);
-        setTimeout(resolve, 60000);
-      });
     } catch (e) {
       console.warn('[Quinti] No se pudo autoplay audio:', e?.message || e);
     }
-  }
+  }));
+}
+
+/** @deprecated nombre viejo — ahora suenan en paralelo */
+async function playAudioSequence(audioEls) {
+  return playAudioParallel(audioEls);
 }
 function actualizarMeta(r) {
   if (!r) r = getEstado();
