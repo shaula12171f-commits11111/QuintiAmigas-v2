@@ -664,13 +664,33 @@ export function iniciarHistoria(chica, historiaId) {
     `Mensaje de bienvenida (${chica}): ${extracto}`
   ].join('\n');
   log('Resumen sembrado con bienvenida de historia:', nombreHist);
-  const welcomeSexual = /chup|mamad|pija|verga|foll|coño|boxers|te saca la|en la boca/i.test(texto);
+  // Imagen de bienvenida: preferir lo definido en historias.js (imagenBienvenida)
+  const imgB = h.imagenBienvenida || null;
+  const welcomeSexual = /chup|mamad|pija|verga|foll|coño|boxers|te saca la|en la boca/i.test(texto)
+    || (imgB && imgB.tag && !/^hablando$/i.test(imgB.tag));
   if (welcomeSexual) estado.fase = FASE.INTIMO;
-  let tagInferido = 'hablando';
-  if (String(historiaId || '').includes('confesion')) tagInferido = 'hablando';
-  else if (welcomeSexual) tagInferido = inferirTagFuerte(chica, texto, '', false) || 'hablando';
-  else if (/beso|besarte|besando/i.test(texto)) tagInferido = normalizarTag(chica, 'besando', true) || 'hablando';
-  const media = resolverImagen(chica, tagInferido, !welcomeSexual);
+
+  let media = { url: '', audio: '', descripcion: '', tag: 'hablando' };
+  if (imgB && (imgB.url || imgB.tag)) {
+    if (imgB.tag) {
+      media = resolverImagen(chica, imgB.tag, !welcomeSexual) || media;
+    }
+    // Overrides explícitos (mismo estilo que una entrada de imagenes.js)
+    if (imgB.url) media.url = imgB.url;
+    if (imgB.audio != null && imgB.audio !== '') media.audio = imgB.audio;
+    if (imgB.descripcion) media.descripcion = imgB.descripcion;
+    if (imgB.tag) media.tag = imgB.tag;
+    log('Bienvenida historia: imagen desde historias.js', media.tag || imgB.url);
+  } else {
+    // Fallback legacy: inferir tag del texto
+    let tagInferido = 'hablando';
+    if (String(historiaId || '').includes('confesion')) tagInferido = 'hablando';
+    else if (welcomeSexual) tagInferido = inferirTagFuerte(chica, texto, '', false) || 'hablando';
+    else if (/beso|besarte|besando/i.test(texto)) tagInferido = normalizarTag(chica, 'besando', true) || 'hablando';
+    media = resolverImagen(chica, tagInferido, !welcomeSexual);
+    log('Bienvenida historia: tag inferido', media.tag);
+  }
+
   if (media.descripcion) estado.outfitActual = { chica, tag: media.tag, descripcion: media.descripcion };
   if (media.tag && media.tag !== 'hablando') estado.accionActual = media.tag;
   return {
