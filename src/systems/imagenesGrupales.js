@@ -1,16 +1,14 @@
 // ============================================================
 //  Imágenes GRUPALES — QuintiAmigas v2
 //
-//  Organización por SECCIONES:
-//    DUOS | TRIOS | CUARTETOS | QUINTETOS
+//  VARIAS CHICAS + UN CHICO (el usuario).
+//  Organización: DUOS | TRIOS | CUARTETOS | QUINTETOS
 //
-//  Cada entrada usa un tag legible, ej:
-//    nino_ichika_doble_mamada
-//    nino_miku_ichika_triple_mamada
+//  Ej: nino_ichika_doble_mamada
+//      nino_miku_ichika_triple_mamada
 //
-//  Al buscar, el orden de nombres en el chat NO importa:
-//  se prueba la clave tal cual y también permutaciones de nombres.
-//  Agregá solo las que tengan URL real.
+//  NO usar para: usuario+chica y Aldo+otra (eso es imagenesParejas).
+//  Agregá solo entradas con URL real.
 // ============================================================
 
 const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'];
@@ -46,9 +44,9 @@ const DUOS = {
 //  TRIOS (3 chicas)
 // ---------------------------------------------------------------------------
 const TRIOS = {
-   follo_a_nino_doggystyle_mientras_meto_los_dedos_en_la_concha_a_miku_y_ichika: {
+  follo_a_nino_doggystyle_mientras_meto_los_dedos_en_la_concha_a_miku_y_ichika: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/follo_a_nino_doggystyle_mientras_meto_los_dedos_en_la_concha_a_miku_y_ichika.jpg',
-    descripcion: 'follo a nino doggystyle mientras meto los dedos en las conchas de miku y yotsuba',
+    descripcion: 'follo a nino doggystyle mientras meto los dedos en las conchas de miku y ichika',
     audio: ''
   },
   // nino_ichika_miku_triple_mamada: {
