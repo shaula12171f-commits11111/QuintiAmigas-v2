@@ -1134,13 +1134,55 @@ function debeAplicarContinuidadCorrida(chica, mensajeUsuario) {
   return false;
 }
 
-async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = false, accionAnterior = null) {
+
+/**
+ * Extrae del mensaje del usuario la parte que afecta a ESTA chica.
+ * Evita que "doggy a Nino + dedos a Miku" le ponga doggy también a Miku.
+ */
+function extractAccionRelevanteParaChica(chica, mensajeUsuario, otrasChicas = []) {
+  const msg = String(mensajeUsuario || '').trim();
+  if (!msg) return msg;
+  const nombre = String(chica || '').toLowerCase();
+  if (!nombre) return msg;
+
+  const todas = ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'];
+  const msgLow = msg.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const nombraOtras = todas.filter((t) => t !== nombre).some((t) => msgLow.includes(t));
+  if (!nombraOtras) return msg;
+
+  // Partir solo por conectores de escenas distintas (NO por "miku y ichika" = misma acción)
+  const trozos = msg.split(
+    /\s*(?:\bmientras(?:\s+que)?\b|\bal\s+mismo\s+tiempo\b|\ba\s+la\s+vez\b|(?<=[.!?;])\s+)/i
+  ).map((t) => t.trim()).filter(Boolean);
+
+  const conElla = trozos.filter((t) => t.toLowerCase().includes(nombre));
+  if (conElla.length) {
+    // Quitar de cada trozo menciones de otras chicas solo si el trozo es claramente de otra
+    // (si dice "dedos a miku y ichika", ambas se quedan con ese trozo entero)
+    return conElla.join(' | ').slice(0, 500);
+  }
+
+  // Nombre no aparece: no heredar doggy/oral de otra
+  return (
+    `(El usuario no describió acción explícita para ${chica}. ` +
+    `NO copies doggy/oral/pose de otra chica. Elegí tag según lo que ${chica} hace en SU respuesta.)`
+  ).slice(0, 500);
+}
+
+
+async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = false, accionAnterior = null, opciones = {}) {
   const tags = soloNoSex ? listarTagsNoSex(chica) : listarTags(chica);
   if (!tags.length) return { tag: 'hablando', razon: 'sin_tags', fuente: 'qwen' };
 
   const ropa = getRopaChica(chica);
   const listaTags = tags.join(', ');
-  const msg = String(mensajeUsuario || '').trim();
+  const otrasChicas = opciones.otrasChicas || [];
+  const msgCompleto = String(mensajeUsuario || '').trim();
+  // En multi: solo la parte del mensaje que afecta a ESTA chica
+  const msg = extractAccionRelevanteParaChica(chica, msgCompleto, otrasChicas) || msgCompleto;
+  if (msg !== msgCompleto) {
+    log('Tag foco por chica:', chica, '→', msg.slice(0, 120));
+  }
   const msgLower = msg.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
 
   // ¿El usuario solo está diciendo que se corre? (mensaje corto de eyaculación)
@@ -1224,16 +1266,20 @@ Reglas estrictas (prioridad de arriba hacia abajo):
 4) BOLAS: Si la escena es chupar/lamer bolas, el tag DEBE indicar lado: izquierda, derecha o ambas (chupando_bola_izquierda / chupando_bola_derecha / chupando_bolas). No uses un tag genérico de oral si hay tags de bola con lado.
 5) SOLO podés elegir un tag que esté en la lista. No inventes tags.
 6) Prestá atención a la zona del cuerpo y a QUIÉN recibe la acción.
-7) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
-8) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
+7) MULTI: el "mensaje del usuario" que recibís puede estar REORTADO a ESTA chica. Elegí SOLO la acción de ${chica}. PROHIBIDO copiar doggy/oral/etc. de otra hermana si no le corresponde a ella.
+8) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
+9) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
 
   const user = `CHICA: ${chica}
 ACCIÓN ANTERIOR (solo si aplica a ESTA chica y el usuario se corre): ${accionParaContinuar || 'ninguna — no arrastrar de otra chica/otra escena'}
 ROPA ACTUAL: ${ropa.actual || 'desconocida'}
 ROPA ANTERIOR: ${ropa.anterior || '—'}
 
-MENSAJE DEL USUARIO:
+ACCIÓN DEL USUARIO RELEVANTE PARA ${chica} (no uses acciones de otras chicas):
 """${msg.slice(0, 800)}"""
+
+MENSAJE COMPLETO (solo contexto; el tag debe seguir la acción de ${chica}):
+"""${msgCompleto.slice(0, 400)}"""
 
 RESPUESTA DE LA CHICA:
 """${String(textoBot || '').slice(0, 1200)}"""
@@ -1796,7 +1842,8 @@ export async function enviarMensaje(mensajeUsuario) {
       if (esSugerencia && escenaActiva) {
         log('Pregunta durante sexo activo → NO forzar hablando, mantener escena');
       }
-      qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex, estado.accionActual);
+      const otrasEnTurno = bloques.map((x) => x.chica).filter((c) => c && c !== b.chica && c !== 'Aldo' && c !== 'Sistema');
+      qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex, estado.accionActual, { otrasChicas: otrasEnTurno });
     }
     let tagFinal = qwen.tag || 'hablando';
 
