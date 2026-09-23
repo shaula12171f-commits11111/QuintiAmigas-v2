@@ -83,7 +83,11 @@ let estado = {
   // Eyaculación rápida
   turnosEnSexo: 0,           // turnos desde que empezó la escena sexual activa
   eyaculacionRapida: false,  // true si se corrió en <= 2 turnos de sexo
-  ultimaEyaculacionRapida: false // se mantiene un turno para el prompt
+  ultimaEyaculacionRapida: false, // se mantiene un turno para el prompt
+  // Máquina de corridas
+  corridas: [],              // [{ de, en, donde, pose, id }]
+  corridasCountPorChica: {}, // { Nino: 2, Miku: 1 }
+  ultimaCorrida: null
 };
 
 const MAX_HISTORIAL = 20;
@@ -206,6 +210,192 @@ function actualizarContadorSexoYEyaculacion(mensajeUsuario, tagUsado = null) {
   }
 }
 
+
+
+// ========== MÁQUINA DE CORRIDAS ==========
+function canonChicaNombre(n) {
+  const x = String(n || '').toLowerCase();
+  return ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'].find((c) => c.toLowerCase() === x) || null;
+}
+
+function detectarDondeCorrida(texto) {
+  const t = String(texto || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (/dentro\s+(de\s+)?(su\s+)?(culo|ano)|en\s+(el\s+)?culo|anal\s+dentro|creampie\s+anal/.test(t)) return 'dentro_anal';
+  if (/dentro|adentro|creampie|en\s+(su\s+)?(concha|coño|vagina|interior)|llen[oa]\s+(de\s+)?(semen|leche)/.test(t)) return 'dentro_vagina';
+  if (/en\s+(la\s+|su\s+)?cara|facial|sobre\s+(la\s+)?cara|rostro/.test(t)) return 'cara';
+  if (/en\s+(la\s+|su\s+)?boca|trag|oral\s+cum|leche\s+en\s+la\s+boca/.test(t)) return 'boca';
+  if (/en\s+(las\s+|sus\s+)?tetas|pecho|entre\s+(las\s+)?tetas|paizuri/.test(t)) return 'pecho';
+  if (/en\s+(el\s+|su\s+)?cuerpo|sobre\s+(el\s+)?cuerpo|barriga|espalda|nalgas/.test(t)) return 'cuerpo';
+  if (/afuera|fuera|exterior|pull\s*out/.test(t)) return 'afuera';
+  return 'desconocido';
+}
+
+function detectarPoseParaCorrida(texto, chica) {
+  const t = String(texto || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (/doggy|doggystyle|a cuatro|perrito/.test(t)) return 'doggy';
+  if (/misioner|misionero/.test(t)) return 'misionero';
+  if (/cowgirl|vaquera|horcajadas/.test(t)) return 'cowgirl';
+  if (/stand\s*fuck|standfuck|de pie/.test(t)) return 'standfuck';
+  if (/chup|oral|mamad|boca/.test(t) && !/dentro/.test(t)) return 'oral';
+  // Buscar en hechos recientes de esa chica
+  const C = chica || '';
+  const hechos = estado.hechos || [];
+  for (let i = hechos.length - 1; i >= 0; i--) {
+    const h = String(hechos[i]);
+    if (C && !h.toLowerCase().includes(String(C).toLowerCase())) continue;
+    if (/doggy/i.test(h)) return 'doggy';
+    if (/misionero/i.test(h)) return 'misionero';
+    if (/cowgirl|vaquera/i.test(h)) return 'cowgirl';
+    if (/standfuck|de pie/i.test(h)) return 'standfuck';
+    if (/oral/i.test(h)) return 'oral';
+  }
+  const a = String(estado.accionActual || '').toLowerCase();
+  if (/doggy/.test(a)) return 'doggy';
+  if (/mision/.test(a)) return 'misionero';
+  if (/cowgirl|vaquera/.test(a)) return 'cowgirl';
+  return null;
+}
+
+function detectarChicaObjetivoCorrida(texto) {
+  const t = String(texto || '').toLowerCase();
+  const chicas = ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'];
+  // "en la cara de nino" / "dentro de miku" / "a nino"
+  for (const cl of chicas) {
+    if (new RegExp(`\\b(de|en|a|dentro de)\\s+${cl}\\b|\\b${cl}\\b`).test(t)) {
+      // prefer explicit target patterns
+      if (new RegExp(`\\b(de|en|a|dentro\\s+de)\\s+${cl}\\b`).test(t)) return canonChicaNombre(cl);
+    }
+  }
+  for (const cl of chicas) {
+    if (new RegExp(`\\b${cl}\\b`).test(t)) return canonChicaNombre(cl);
+  }
+  return estado.chica || null;
+}
+
+function registrarCorrida({ de, en, donde, pose, fuente = 'parse' }) {
+  if (!en) en = estado.chica;
+  if (!en) return null;
+  const rec = {
+    id: Date.now() + Math.floor(Math.random() * 999),
+    de: de || 'usuario',
+    en,
+    donde: donde || 'desconocido',
+    pose: pose || null,
+    fuente
+  };
+  if (!Array.isArray(estado.corridas)) estado.corridas = [];
+  // Evitar duplicar la misma corrida en el mismo turno (misma firma)
+  const firma = `${rec.de}|${rec.en}|${rec.donde}|${rec.pose}`;
+  const last = estado.corridas[estado.corridas.length - 1];
+  if (last && `${last.de}|${last.en}|${last.donde}|${last.pose}` === firma) {
+    return last;
+  }
+  estado.corridas.push(rec);
+  estado.corridas = estado.corridas.slice(-30);
+  estado.ultimaCorrida = rec;
+  if (!estado.corridasCountPorChica) estado.corridasCountPorChica = {};
+  estado.corridasCountPorChica[en] = (estado.corridasCountPorChica[en] || 0) + 1;
+
+  const dondeTxt = {
+    dentro_vagina: 'dentro (vaginal)',
+    dentro_anal: 'dentro (anal)',
+    cara: 'en la cara',
+    boca: 'en la boca',
+    pecho: 'en el pecho/tetas',
+    cuerpo: 'sobre el cuerpo',
+    afuera: 'afuera',
+    desconocido: 'lugar no especificado'
+  }[rec.donde] || rec.donde;
+
+  const poseTxt = rec.pose ? ` en pose ${rec.pose}` : '';
+  const hecho = `CORRIDAS: ${rec.de} se corrió ${dondeTxt} de/en ${rec.en}${poseTxt} (#${estado.corridasCountPorChica[en]} en ${rec.en})`;
+  if (typeof addHechoFijo === 'function') {
+    addHechoFijo(hecho);
+  } else if (!estado.hechos.includes(hecho)) {
+    estado.hechos.push(hecho);
+    estado.hechos = estado.hechos.slice(-24);
+  }
+  log('Corrida registrada:', rec);
+  return rec;
+}
+
+/** Detecta corridas del usuario y de Aldo en el mensaje (y refuerzo desde respuesta). */
+function procesarCorridasDelIntercambio(mensajeUsuario, respuestaBot = '') {
+  const u = String(mensajeUsuario || '');
+  const uLow = u.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const bLow = String(respuestaBot || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const mix = uLow + ' ' + bLow;
+
+  // Usuario se corre
+  const userEyacula = /\b(me\s*corr[oóí]|me\s*vine|eyacul[oó]|acabo|me\s*sali[oó]|tiro\s*(semen|leche))\b/.test(uLow);
+  if (userEyacula) {
+    const en = detectarChicaObjetivoCorrida(u) || estado.chica;
+    const donde = detectarDondeCorrida(u);
+    const pose = detectarPoseParaCorrida(u, en);
+    registrarCorrida({ de: 'usuario', en, donde, pose, fuente: 'usuario' });
+  }
+
+  // Aldo se corre
+  const aldoEyacula =
+    /\baldo\b[\s\S]{0,60}\b(se\s*corr[eéó]|eyacul|se\s*vine|acab[oó])\b/.test(mix) ||
+    /\b(se\s*corr[eéó]|eyacul)[\s\S]{0,40}\baldo\b/.test(mix) ||
+    /\baldo\s+se\s+corr/.test(mix);
+  if (aldoEyacula) {
+    // Preferir chica mencionada cerca de Aldo; si no, la que está con Aldo en hechos
+    let en = detectarChicaObjetivoCorrida(mix);
+    if (!en) {
+      const hechos = estado.hechos || [];
+      for (let i = hechos.length - 1; i >= 0; i--) {
+        const h = String(hechos[i]);
+        const m = h.match(/\b(Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia)\b.*\bAldo\b|\bAldo\b.*\b(Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia)\b/i);
+        if (m) {
+          en = canonChicaNombre(m[1] || m[2]);
+          break;
+        }
+      }
+    }
+    en = en || estado.chica;
+    const donde = detectarDondeCorrida(mix);
+    const pose = detectarPoseParaCorrida(mix, en);
+    registrarCorrida({ de: 'Aldo', en, donde, pose, fuente: 'aldo' });
+  }
+
+  // Refuerzo: respuesta describe semen/corrida en alguien si el usuario dijo me corro sin detalle
+  if (userEyacula && estado.ultimaCorrida && estado.ultimaCorrida.donde === 'desconocido' && bLow) {
+    const donde2 = detectarDondeCorrida(bLow);
+    if (donde2 !== 'desconocido') {
+      estado.ultimaCorrida.donde = donde2;
+      // actualizar último hecho de corrida
+      const c = estado.ultimaCorrida;
+      const dondeTxt = {
+        dentro_vagina: 'dentro (vaginal)', dentro_anal: 'dentro (anal)', cara: 'en la cara',
+        boca: 'en la boca', pecho: 'en el pecho/tetas', cuerpo: 'sobre el cuerpo',
+        afuera: 'afuera', desconocido: 'lugar no especificado'
+      }[c.donde] || c.donde;
+      addHechoFijo(
+        `CORRIDAS: ${c.de} se corrió ${dondeTxt} de/en ${c.en}${c.pose ? ' en pose ' + c.pose : ''} (#${estado.corridasCountPorChica[c.en] || 1} en ${c.en})`,
+        `CORRIDAS: ${c.de} se corrió`
+      );
+    }
+  }
+}
+
+function textoCorridasParaContexto() {
+  const lines = [];
+  const counts = estado.corridasCountPorChica || {};
+  const keys = Object.keys(counts);
+  if (keys.length) {
+    lines.push('Contador de corridas recibidas: ' + keys.map((k) => `${k}=${counts[k]}`).join(', '));
+  }
+  const ult = (estado.corridas || []).slice(-5);
+  for (const c of ult) {
+    lines.push(`- ${c.de} → ${c.en} | dónde=${c.donde}${c.pose ? ' | pose=' + c.pose : ''}`);
+  }
+  if (estado.ultimaCorrida) {
+    lines.push(`Última corrida: ${estado.ultimaCorrida.de} en ${estado.ultimaCorrida.en} (${estado.ultimaCorrida.donde}${estado.ultimaCorrida.pose ? ', ' + estado.ultimaCorrida.pose : ''})`);
+  }
+  return lines.length ? lines.join('\n') : '';
+}
 
 function log(...args) { console.log('%c[Quinti]', 'color:#a78bfa;font-weight:bold', ...args); }
 function logGroup(title, obj) {
@@ -606,6 +796,9 @@ export async function iniciarChatLasCinco() {
   estado.relacion = RELACION.DESCONOCIDA;
   estado.relacionPorChica = {};
   estado.vinculosNPC = {};
+  estado.corridas = [];
+  estado.corridasCountPorChica = {};
+  estado.ultimaCorrida = null;
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
@@ -645,6 +838,9 @@ export function iniciarChatLibre(chica) {
   estado.relacion = RELACION.DESCONOCIDA;
   estado.relacionPorChica = {};
   estado.vinculosNPC = {};
+  estado.corridas = [];
+  estado.corridasCountPorChica = {};
+  estado.ultimaCorrida = null;
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica[chica] = { actual: 'desconocida', anterior: null, tagActual: null, tagAnterior: null };
@@ -1245,6 +1441,11 @@ function construirContexto(mensajeUsuarioActual = '') {
   if (estado.hechos.length) {
     lineas.push('### HECHOS_FIJOS (no olvidar ni contradecir; si preguntan la posición u otros detalles, usá ESTO):');
     lineas.push(estado.hechos.slice(-16).map((h) => '- ' + h).join('\n'));
+  }
+  const bloqueCorridas = typeof textoCorridasParaContexto === 'function' ? textoCorridasParaContexto() : '';
+  if (bloqueCorridas) {
+    lineas.push('### CORRIDAS (quién, en quién, dónde, pose — no contradecir):');
+    lineas.push(bloqueCorridas);
   }
   if (estado.outfitActual?.descripcion) lineas.push('OUTFIT: ' + estado.outfitActual.descripcion);
   if (estado.chica) {
@@ -2242,7 +2443,8 @@ CLIMA: (charla | coqueteo | rechazo | sexo | after)
 Reglas:
 - Máximo ~400 palabras, denso, tercera persona.
 - ACCIONES = solo el estado AHORA (este turno): quién hace qué CON QUIÉN (ej. "Nino: doggy con Aldo; Miku: doggy con usuario + condón").
-- HECHOS_FIJOS del sistema son sagrados. Copialos. NUNCA contradigas pose/pareja/condón.
+- HECHOS_FIJOS del sistema son sagrados. Copialos. NUNCA contradigas pose/pareja/condón/corridas.
+- Si hay CORRIDAS (quién se corrió, en quién, dónde, pose, contador), inclúyelas en HECHOS y no las inventes ni borres.
 - RELACION: una entrada por chica con el USUARIO + NPCs (ej. "Aldo: novio de Miku"). Si Miku es novia de Aldo, NO la marques sexfriend/novia del usuario salvo que HECHOS_FIJOS lo digan.
 - LUGAR: solo si está claro en el resumen anterior o el intercambio. Si no, "no definido". PROHIBIDO inventar café/oficina.
 - No mezcles poses viejas de otra escena si el turno actual las reemplazó (preferí el hecho más reciente por chica+pose).
@@ -2261,6 +2463,7 @@ Relación sistema (mapa): ${typeof textoMapaRelaciones === 'function' ? textoMap
 Lugar sistema: ${estado.ubicacion || 'no definido'}
 Acción tag: ${estado.accionActual || 'ninguna'}
 Fase: ${estado.fase}
+Corridas: ${typeof textoCorridasParaContexto === 'function' ? textoCorridasParaContexto() : '(n/a)'}
 
 ÚLTIMO INTERCAMBIO:
 Usuario: ${String(mensajeUsuario || '').slice(0, 700)}
@@ -2381,6 +2584,7 @@ export async function enviarMensaje(mensajeUsuario) {
   estado.ultimoMensajeUsuario = mensajeUsuario;
   // Hechos fijos desde el mensaje del usuario (misionero, condón, etc.) antes de que la IA responda
   registrarHechosDesdeIntercambio(mensajeUsuario, '');
+  procesarCorridasDelIntercambio(mensajeUsuario, '');
 
   // Nº de mensaje del usuario en esta partida (la bienvenida no cuenta)
   const numMensajeUsuario = (estado.mensajesCount || 0) + 1;
@@ -2507,6 +2711,8 @@ export async function enviarMensaje(mensajeUsuario) {
 
   postProcesarFase(parsed.respuesta);
   extraerHechos();
+  registrarHechosDesdeIntercambio(mensajeUsuario, parsed.respuesta);
+  procesarCorridasDelIntercambio(mensajeUsuario, parsed.respuesta);
   await actualizarRelacionAutomatica(mensajeUsuario, parsed.respuesta);
 
   let bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
@@ -2799,6 +3005,9 @@ export function resetChat() {
   estado.relacion = RELACION.DESCONOCIDA;
   estado.relacionPorChica = {};
   estado.vinculosNPC = {};
+  estado.corridas = [];
+  estado.corridasCountPorChica = {};
+  estado.ultimaCorrida = null;
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
@@ -2824,6 +3033,9 @@ export function volverAlSelector() {
   estado.relacion = RELACION.DESCONOCIDA;
   estado.relacionPorChica = {};
   estado.vinculosNPC = {};
+  estado.corridas = [];
+  estado.corridasCountPorChica = {};
+  estado.ultimaCorrida = null;
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
