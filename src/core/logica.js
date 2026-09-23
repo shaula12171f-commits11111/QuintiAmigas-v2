@@ -792,39 +792,143 @@ function detectarPersonajesEnContexto(textoUsuario) {
   return [...found].filter((n) => existePersonaje(n));
 }
 
-/** Progresion automatica de relacion */
-function actualizarRelacionAutomatica(mensajeUsuario, respuestaBot) {
-  estado.mensajesCount = (estado.mensajesCount || 0) + 1;
-  const idx = RELACION_ORDEN.indexOf(estado.relacion);
-  const m = String(mensajeUsuario || '').toLowerCase();
-  const r = String(respuestaBot || '').toLowerCase();
 
-  // Subir a conocida tras unos mensajes
+/** Registra hechos sexuales/de escena que NO se pueden olvidar (append-only). */
+function registrarHechosDesdeIntercambio(mensajeUsuario, respuestaBot = '') {
+  const u = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const b = String(respuestaBot || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const t = u + ' ' + b;
+  const ch = estado.chica || 'la chica';
+  const add = (h) => {
+    if (!h) return;
+    if (!estado.hechos.includes(h)) {
+      estado.hechos.push(h);
+      log('Hecho fijo:', h);
+    }
+  };
+
+  if (/\bmisioner|misionero\b/.test(t)) add(`Follaron en posición misionero (${ch})`);
+  if (/\bdoggy|doggystyle|a cuatro|perrito\b/.test(t)) add(`Follaron en doggy/perrito (${ch})`);
+  if (/\bcowgirl|vaquera\b/.test(t)) add(`Follaron en vaquera/cowgirl (${ch})`);
+  if (/\bstand\s*fuck|standfuck|de pie\b/.test(t)) add(`Follaron de pie/standfuck (${ch})`);
+  if (/\bcondon|condón|preservativo\b/.test(t)) add(`Hubo condón en la escena con ${ch}`);
+  if (/\b(saco|saque|saqué|quitar|quite|quité)\b.*\bcondon|condón|preservativo\b/.test(u) ||
+      /\bsin condon|sin condón\b/.test(u)) {
+    add(`Usuario se quitó / dejó de usar el condón`);
+  }
+  if (/\b(me corro|me corrio|me corrí|eyacul)\b/.test(u) && /\bcara|facial|rostro\b/.test(u)) {
+    add(`Usuario se corrió en la cara de ${ch}`);
+  }
+  if (/\bsemen\b.*\bcara|cara\b.*\bsemen|facial\b/.test(t)) add(`Semen en la cara de ${ch}`);
+  if (/\bchup|mamad|oral|bolas|glande\b/.test(u)) {
+    if (/\bbolas|testicul\b/.test(u)) add(`Oral en bolas (${ch})`);
+    else if (/\bglande|puntita|punta\b/.test(u)) add(`Oral en glande/punta (${ch})`);
+    else add(`Hubo oral con ${ch}`);
+  }
+
+  estado.hechos = estado.hechos.slice(-20);
+}
+
+/** Normaliza etiqueta de relación de la IA. */
+function normalizarEtiquetaRelacion(raw) {
+  const t = String(raw || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (/novia|novio|pareja exclusiv/.test(t)) return RELACION.NOVIA;
+  if (/sexfriend|sex friend|amigos con derechos|solo sexo/.test(t)) return RELACION.SEXFRIEND;
+  if (/amiga|amigo|friends/.test(t)) return RELACION.AMIGA;
+  if (/conocid/.test(t)) return RELACION.CONOCIDA;
+  if (/desconoc/.test(t)) return RELACION.DESCONOCIDA;
+  return null;
+}
+
+/**
+ * Relación híbrida: la IA interpreta el vínculo; la lógica valida saltos.
+ * Novia solo si ella aceptó; no subir solo porque el usuario lo pidió.
+ */
+async function actualizarRelacionAutomatica(mensajeUsuario, respuestaBot) {
+  estado.mensajesCount = (estado.mensajesCount || 0) + 1;
+  const m = String(mensajeUsuario || '');
+  const r = String(respuestaBot || '');
+  const mix = (m + ' ' + r).toLowerCase();
+
+  // Piso suave: tras unos mensajes ya no son total desconocidos
   if (estado.relacion === RELACION.DESCONOCIDA && estado.mensajesCount >= 3) {
     estado.relacion = RELACION.CONOCIDA;
-    log('Relacion → conocida');
+    log('Relacion piso → conocida');
   }
-  // Amiga: mas mensajes + tono amistoso
-  if (estado.relacion === RELACION.CONOCIDA && estado.mensajesCount >= 8) {
-    estado.relacion = RELACION.AMIGA;
-    log('Relacion → amiga');
-  }
-  // Novia: mencion de pareja / amor / exclusividad o muchos mensajes
-  if (estado.relacion === RELACION.AMIGA) {
-    if (/novia|novio|pareja|te amo|te quiero|somos|exclusiv/i.test(m + ' ' + r) || estado.mensajesCount >= 18) {
-      estado.relacion = RELACION.NOVIA;
-      log('Relacion → novia');
-    }
-  }
-  // Sexfriend: cuando hay escena intima reiterada
-  if ((estado.relacion === RELACION.AMIGA || estado.relacion === RELACION.NOVIA) && estado.fase === FASE.INTIMO) {
-    if (estado.mensajesCount >= 12 || /sexfriend|amigos con derechos|solo sexo/i.test(m)) {
-      // Si ya es novia no bajamos; si es amiga podemos marcar sexfriend
-      if (estado.relacion === RELACION.AMIGA) {
-        estado.relacion = RELACION.SEXFRIEND;
-        log('Relacion → sexfriend');
+
+  const haySenal = /novia|novio|pareja|te amo|te quiero|sexfriend|amigos con derechos|solo sexo|relacion|relación|seamos|rechaz|no quiero|no todavía|no todavia|amigos\b|conocer/i.test(mix)
+    || estado.mensajesCount % 5 === 0;
+
+  if (!haySenal) return;
+
+  const actual = estado.relacion || RELACION.DESCONOCIDA;
+  const system = `Clasificás el VÍNCULO actual entre el usuario (hombre) y la chica principal en un roleplay.
+Respondé SOLO JSON: {"relacion":"desconocida|conocida|amiga|sexfriend|novia","motivo":"frase corta"}
+
+Reglas:
+- "novia" SOLO si ELLA aceptó noviazgo/pareja de forma clara. Si él pidió y ella rechazó → no novia.
+- "sexfriend" si hay sexo habitual/aceptado sin exclusividad de pareja.
+- "amiga" si hay confianza/charla sin ser pareja ni solo sexo.
+- "conocida" si apenas interactúan.
+- "desconocida" si casi no se conocen.
+- No subas de nivel solo porque él lo pidió.
+- Relación actual del sistema: ${actual}. Preferí coherencia con el último intercambio.`;
+
+  const user = `Relación sistema ahora: ${actual}
+Mensajes del usuario (conteo): ${estado.mensajesCount}
+Usuario: ${m.slice(0, 500)}
+Chica: ${r.slice(0, 700)}
+JSON:`;
+
+  try {
+    const raw = await llamarGroq(
+      [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ],
+      {
+        model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : MODELO,
+        temperature: 0.1,
+        max_tokens: 120,
+        proposito: 'clasificar-relacion'
+      }
+    );
+    let parsed = null;
+    try {
+      const j = String(raw || '').match(/\{[\s\S]*\}/);
+      parsed = j ? JSON.parse(j[0]) : null;
+    } catch (_) {}
+    const candidata = normalizarEtiquetaRelacion(parsed?.relacion || raw);
+    if (!candidata) return;
+
+    // Validación de saltos: no saltar a novia desde desconocida/conocida en un golpe
+    const orden = RELACION_ORDEN;
+    const iAct = orden.indexOf(actual);
+    const iNew = orden.indexOf(candidata);
+    if (candidata === RELACION.NOVIA && (actual === RELACION.DESCONOCIDA || actual === RELACION.CONOCIDA)) {
+      // Solo si ella aceptó en el texto
+      if (!/\b(s[ií]|acepto|está bien|esta bien|seamos novios|ok.*novia|novios)\b/i.test(r)) {
+        log('Relacion IA novia bloqueada (sin aceptación clara):', parsed?.motivo || '');
+        return;
       }
     }
+    // No degradar novia → desconocida de golpe
+    if (actual === RELACION.NOVIA && (candidata === RELACION.DESCONOCIDA || candidata === RELACION.CONOCIDA)) {
+      log('Relacion IA degradación brusca ignorada');
+      return;
+    }
+
+    if (candidata !== actual) {
+      estado.relacion = candidata;
+      log('Relacion IA →', candidata, parsed?.motivo || '');
+      const hecho = `Relación pasó a ${candidata}` + (parsed?.motivo ? ` (${parsed.motivo})` : '');
+      if (!estado.hechos.includes(hecho)) {
+        estado.hechos.push(hecho);
+        estado.hechos = estado.hechos.slice(-20);
+      }
+    }
+  } catch (e) {
+    log('Relacion IA falló, se mantiene', actual, e?.message || e);
   }
 }
 
@@ -915,7 +1019,10 @@ function construirContexto(mensajeUsuarioActual = '') {
   } else if (estado.turnosEnSexo > 0) {
     lineas.push(`Turnos de sexo activo en esta escena: ${estado.turnosEnSexo}.`);
   }
-  if (estado.hechos.length) lineas.push('Hechos: ' + estado.hechos.slice(-8).join(' | '));
+  if (estado.hechos.length) {
+    lineas.push('### HECHOS_FIJOS (no olvidar ni contradecir; si preguntan la posición u otros detalles, usá ESTO):');
+    lineas.push(estado.hechos.slice(-16).map((h) => '- ' + h).join('\n'));
+  }
   if (estado.outfitActual?.descripcion) lineas.push('OUTFIT: ' + estado.outfitActual.descripcion);
   if (estado.chica) {
     const ropa = getRopaChica(estado.chica);
@@ -1872,12 +1979,17 @@ CLIMA: (charla | coqueteo | rechazo | sexo | after)
 
 Reglas:
 - Máximo ~400 palabras, denso, tercera persona.
+- HECHOS_FIJOS del sistema son sagrados: posiciones (misionero/doggy/etc.), condón, corridas, eventos de celular. NUNCA digas que la primera posición fue otra si HECHOS_FIJOS dice misionero.
 - Si llegó un mensaje de celular/foto, ANOTALO en HECHOS pero NO borres la acción sexual en curso en ACCIONES.
-- Conservá continuidad: no inventes que paró el oral si el usuario no lo dijo.
+- Conservá continuidad: no inventes que paró el oral/penetración si el usuario no lo dijo.
 - Si el usuario fue rechazado por ir muy rápido, anotalo en HECHOS.`;
 
+  const hechosFijos = (estado.hechos || []).slice(-16).join('\n- ') || '(ninguno aún)';
   const user = `RESUMEN ANTERIOR:
 ${prev || '(vacío)'}
+
+HECHOS_FIJOS DEL SISTEMA (NUNCA los borres, reescribas ni contradigas; copialos a HECHOS):
+- ${hechosFijos}
 
 ESTADO ACTUAL DEL SISTEMA:
 Presentes sistema: ${presentes}
@@ -1890,7 +2002,8 @@ Fase: ${estado.fase}
 Usuario: ${String(mensajeUsuario || '').slice(0, 700)}
 Respuesta: ${String(respuestaBot || '').slice(0, 1100)}
 
-Escribí el resumen actualizado en el FORMATO OBLIGATORIO:`;
+Escribí el resumen actualizado en el FORMATO OBLIGATORIO.
+Si el usuario pregunta qué posición usaron, la respuesta debe basarse en HECHOS_FIJOS (ej. misionero), NO inventar otra.`;
 
   try {
     const raw = await llamarGroq(
@@ -2002,6 +2115,8 @@ export async function enviarMensaje(mensajeUsuario) {
   // Corregir typos de nombres (ichiak→Ichika) antes de todo
   mensajeUsuario = corregirTyposNombresEnMensaje(mensajeUsuario);
   estado.ultimoMensajeUsuario = mensajeUsuario;
+  // Hechos fijos desde el mensaje del usuario (misionero, condón, etc.) antes de que la IA responda
+  registrarHechosDesdeIntercambio(mensajeUsuario, '');
 
   // Nº de mensaje del usuario en esta partida (la bienvenida no cuenta)
   const numMensajeUsuario = (estado.mensajesCount || 0) + 1;
@@ -2128,7 +2243,7 @@ export async function enviarMensaje(mensajeUsuario) {
 
   postProcesarFase(parsed.respuesta);
   extraerHechos();
-  actualizarRelacionAutomatica(mensajeUsuario, parsed.respuesta);
+  await actualizarRelacionAutomatica(mensajeUsuario, parsed.respuesta);
 
   let bloques = partirBloquesMulti(parsed.respuesta, estado.chica);
 
