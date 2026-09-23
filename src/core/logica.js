@@ -825,7 +825,7 @@ export async function iniciarChatLasCinco() {
   estado.corridas = [];
   estado.corridasCountPorChica = {};
   estado.ultimaCorrida = null;
-  estado._corridaMsgFirma = ;
+  estado._corridaMsgFirma = '';
   estado._corridaMsgDone = false;
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
@@ -870,7 +870,7 @@ export function iniciarChatLibre(chica) {
   estado.corridas = [];
   estado.corridasCountPorChica = {};
   estado.ultimaCorrida = null;
-  estado._corridaMsgFirma = ;
+  estado._corridaMsgFirma = '';
   estado._corridaMsgDone = false;
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
@@ -1525,7 +1525,7 @@ async function llamarGroq(messages, opts = {}) {
   }
   const model = opts.model || MODELO || 'llama-3.3-70b-versatile';
   const temperature = opts.temperature ?? 1.05;
-  const max_tokens = opts.max_tokens ?? 1600;
+  const max_tokens = opts.max_tokens ?? 2200;
   const proposito = opts.proposito || 'chat';
   let ultimoError = null;
   const totalKeys = KEYS.length;
@@ -2540,6 +2540,7 @@ RELACION: (por chica con el usuario, ej. Nino:novia; Miku:sexfriend; NPCs: Aldo 
 HECHOS: (acuerdos, rechazos, eventos de celular/foto, promesas; no borres hechos viejos importantes)
 PENDIENTES: (lo que quedó a medias)
 CLIMA: (charla | coqueteo | rechazo | sexo | after)
+ARCO: (capítulo breve: ej. oficina | fiesta | VIP | post-sexo | día siguiente; qué quedó pendiente del arco)
 
 Reglas:
 - Máximo ~400 palabras, denso, tercera persona.
@@ -2583,7 +2584,7 @@ Si el usuario pregunta qué posición usaron, la respuesta debe basarse en HECHO
       {
         model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : MODELO,
         temperature: 0.25,
-        max_tokens: 650,
+        max_tokens: 750,
         proposito: 'resumen-progresivo'
       }
     );
@@ -2719,11 +2720,14 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.accionActual) {
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
-  system += '\n## ESTILO DE ESCRITURA\n';
-  system += 'Escribí en PROSA NARRATIVA (no telegráfica): 2–5 párrafos cuando el turno lo amerite. Incluí lugar, ropa/cuerpo si importa, gestos, silencios y diálogo natural. ';
-  system += 'Evitá respuestas de 1–2 líneas. Si es multi, cada [Nombre]: también con sustancia.\n';
-  system += '\n## MEMORIA\n';
-  system += 'Usá el MAPA DE ESCENA del contexto (PRESENTES, ACCIONES, HECHOS…). Si hubo evento de celular, reaccioná pero NO olvides la acción sexual/charla en curso.\n';
+  system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
+  system += 'Escribí en PROSA NARRATIVA densa: mínimo 2–4 párrafos por personaje activo; más si el usuario da libertad, cambia de día/lugar o pide que continúes. ';
+  system += 'Incluí lugar, luz, ropa/cuerpo, gestos, silencios, miradas y diálogo natural. Suena a ficción erótica bien escrita, no a chat corto. ';
+  system += 'Si el usuario avanza el tiempo (mañana, oficina, fiesta, una semana), narrá el salto de escena con claridad. ';
+  system += 'NPCs con voz propia. PROHIBIDO respuestas de 1–2 líneas en turnos de escena.\n';
+  system += '\n## MEMORIA Y ARCO\n';
+  system += 'Usá el MAPA DE ESCENA (PRESENTES, ACCIONES, HECHOS, CORRIDAS, RELACIONES). No inventes corridas ni contradigas HECHOS_FIJOS. ';
+  system += 'Si hubo celular/foto, reaccioná pero no borres el acto o charla en curso. Recordá quién es novia de quién y con quién está cada una.\n';
   // Evento de historia EN ESTE TURNO: dos bloques de la chica + mensaje ajeno en el medio
   if (eventoHistoria && eventoHistoria.texto) {
     const de = eventoHistoria.de || 'Alguien';
@@ -2794,7 +2798,7 @@ export async function enviarMensaje(mensajeUsuario) {
     { role: 'user', content: mensajeUsuario }
   ];
   log('Contexto IA: resumen=' + ((estado.resumenConversacion || '').length) + ' chars, mensajes recientes=' + recientes.length);
-  let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)' });
+  let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)', max_tokens: 2200, temperature: 1.05 });
   let parsed = parseJsonRespuesta(raw);
   if (!parsed) {
     for (const extra of PROMPTS_REINTENTO) {
@@ -3129,7 +3133,7 @@ export function resetChat() {
   estado.corridas = [];
   estado.corridasCountPorChica = {};
   estado.ultimaCorrida = null;
-  estado._corridaMsgFirma = ;
+  estado._corridaMsgFirma = '';
   estado._corridaMsgDone = false;
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
@@ -3160,7 +3164,7 @@ export function volverAlSelector() {
   estado.corridas = [];
   estado.corridasCountPorChica = {};
   estado.ultimaCorrida = null;
-  estado._corridaMsgFirma = ;
+  estado._corridaMsgFirma = '';
   estado._corridaMsgDone = false;
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
