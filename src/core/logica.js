@@ -73,6 +73,7 @@ let estado = {
 
   outfitActual: null,       // legacy: { chica, tag, descripcion }
   accionActual: null,
+  accionPorChica: {}, // última pose/tag sexual por chica (continuidade multi)
   relacion: RELACION.DESCONOCIDA, // espejo de la chica principal
   relacionPorChica: {}, // { Nino: 'novia', Miku: 'sexfriend', ... }
   vinculosNPC: {}, // { Aldo: 'novio de Ichika' }
@@ -727,6 +728,7 @@ export function exportarEstadoCompleto() {
     eventosDisparados: [...(estado.eventosDisparados || [])],
     eventoPendienteReaccion: estado.eventoPendienteReaccion ? { ...estado.eventoPendienteReaccion } : null,
     accionActual: estado.accionActual,
+    accionPorChica: { ...(estado.accionPorChica || {}) },
     outfitActual: estado.outfitActual ? { ...estado.outfitActual } : null,
     mensajesCount: estado.mensajesCount || 0,
     nombreUsuario: estado.nombreUsuario,
@@ -751,6 +753,7 @@ export function restaurarEstadoCompleto(snap) {
   estado.eventosDisparados = Array.isArray(snap.eventosDisparados) ? [...snap.eventosDisparados] : [];
   estado.eventoPendienteReaccion = snap.eventoPendienteReaccion || null;
   estado.accionActual = snap.accionActual || null;
+  estado.accionPorChica = (snap.accionPorChica && typeof snap.accionPorChica === 'object') ? { ...snap.accionPorChica } : {};
   estado.outfitActual = snap.outfitActual ? { ...snap.outfitActual } : null;
   estado.mensajesCount = snap.mensajesCount || 0;
   if (snap.nombreUsuario) estado.nombreUsuario = snap.nombreUsuario;
@@ -793,6 +796,7 @@ export async function iniciarChatLasCinco() {
   estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
+  estado.accionPorChica = {};
   estado.relacion = RELACION.DESCONOCIDA;
   estado.relacionPorChica = {};
   estado.vinculosNPC = {};
@@ -835,6 +839,7 @@ export function iniciarChatLibre(chica) {
   estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
+  estado.accionPorChica = {};
   estado.relacion = RELACION.DESCONOCIDA;
   estado.relacionPorChica = {};
   estado.vinculosNPC = {};
@@ -864,6 +869,7 @@ export function iniciarHistoria(chica, historiaId) {
   estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
+  estado.accionPorChica = {};
   estado.relacion = RELACION.CONOCIDA; // en historias ya se conocen un poco
   estado.relacionPorChica = { [chica]: RELACION.CONOCIDA };
   estado.vinculosNPC = {};
@@ -1787,15 +1793,33 @@ function extractAccionRelevanteParaChica(chica, mensajeUsuario, otrasChicas = []
 function detectarPoseSexualEnTexto(texto) {
   const t = String(texto || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   if (!t) return null;
-  const haySexo = /\b(foll|penetr|polla|verga|pija|embest|empuj|metiend|dentro|coge|cogiend|gem|ano|culo|concha|coño|ritmo|embestida)\b/.test(t);
+  const haySexo = /\b(foll|penetr|me penetra|lo siento dentro|polla|verga|pija|embest|empuj|metiend|dentro|coge|cogiend|gem|ano|culo|concha|coño|ritmo|embestida|arquea|recibirlo)\b/.test(t);
   if (!haySexo) return null;
   if (/\b(doggy|doggystyle|a cuatro|perrito|por detras|por detrás|detras de|detrás de)\b/.test(t)) return 'doggy';
   if (/\b(misioner|misionero)\b/.test(t)) return 'misionero';
   if (/\b(vaquera|cowgirl|horcajadas|montand|montánd)\b/.test(t)) return 'cowgirl';
   if (/\b(stand\s*fuck|standfuck|de pie|contra la pared)\b/.test(t)) return 'standfuck';
-  if (/\b(chup|mamad|oral|en (la )?boca|deepthroat)\b/.test(t)) return 'chupando';
+  // Oral / petera solo si es el foco (no si además la penetran)
+  if (/\b(chup|mamad|oral|petera|en (la )?boca|deepthroat|lengua.*punta|lam.*glande)\b/.test(t) && !/\b(penetr|me penetra|embest)\b/.test(t)) {
+    return 'chupando';
+  }
   if (/\b(69)\b/.test(t)) return '69';
   return 'follando';
+}
+
+function resolverTagContinuidadChica(chica, textoBot, soloNoSex) {
+  if (soloNoSex) return null;
+  const pose = detectarPoseSexualEnTexto(textoBot);
+  const prev = (estado.accionPorChica && estado.accionPorChica[chica]) || null;
+  const claves = [];
+  if (pose) claves.push(pose, 'doggystyle', 'doggy', 'misionero', 'cowgirl', 'follando', 'chupando', 'chupando_todo_el_pene');
+  if (prev && !/hablando|enojada|sonrojada/i.test(prev)) claves.unshift(prev);
+  if (!claves.length) return null;
+  let tag = buscarTagEnPack(chica, claves, false);
+  if (!tag && pose) tag = normalizarTag(chica, pose, false);
+  if (!tag && prev) tag = normalizarTag(chica, prev, false);
+  if (tag && /hablando/i.test(tag)) return null;
+  return tag || null;
 }
 
 async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = false, accionAnterior = null, opciones = {}) {
@@ -1813,20 +1837,17 @@ async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = fal
   }
   const sinAccionPropia = /SIN_ACCION_PARA_/i.test(msg);
   if (sinAccionPropia) {
-    // El usuario no la nombró, PERO su texto puede describir que SIGUE en un acto (ej. Aldo la folla doggy)
-    const poseEnBot = detectarPoseSexualEnTexto(textoBot);
-    if (poseEnBot && !soloNoSex) {
-      const claves = [poseEnBot, 'doggystyle', 'doggy', 'misionero', 'cowgirl', 'follando', 'follando_doggy'];
-      let tagPose = buscarTagEnPack(chica, claves, false);
-      if (!tagPose) tagPose = normalizarTag(chica, poseEnBot, false) || poseEnBot;
-      log('Tag por pose en texto bot (sigue el acto):', chica, '→', tagPose);
-      return { tag: tagPose, razon: 'continuidad_pose_en_texto_bot', fuente: 'local_pose' };
+    // Usuario no la nombró, pero puede SEGUIR en acto (Aldo la penetra) o tener pose previa
+    const tagCont = resolverTagContinuidadChica(chica, textoBot, soloNoSex);
+    if (tagCont) {
+      log('Tag continuidad multi (sigue el acto):', chica, '→', tagCont);
+      return { tag: tagCont, razon: 'continuidad_pose_o_previa', fuente: 'local_pose' };
     }
     const emocion = /enoj|celos|furios/i.test(String(textoBot || '')) ? 'enojada'
       : /sonroj|timid/i.test(String(textoBot || '')) ? 'sonrojada'
       : 'hablando';
     const tagSafe = normalizarTag(chica, emocion, true) || 'hablando';
-    log('Tag forzado (sin acción ni pose sexual en texto):', chica, '→', tagSafe);
+    log('Tag forzado (sin acción ni pose sexual):', chica, '→', tagSafe);
     return { tag: tagSafe, razon: 'sin_accion_en_mensaje_usuario', fuente: 'local_multi' };
   }
   const msgLower = msg.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -1984,16 +2005,12 @@ Respondé solo el tag:`;
 
     tag = normalizarTag(chica, tag, soloNoSex);
 
-    // Si Qwen puso "hablando" pero el texto describe sexo en curso → corregir a la pose
+    // Si Qwen puso "hablando" pero sigue el sexo en el texto o había pose previa → corregir
     if (!soloNoSex && /hablando|enojada|sonrojada|celos/i.test(String(tag || ''))) {
-      const poseFix = detectarPoseSexualEnTexto(textoBot);
-      if (poseFix) {
-        const claves = [poseFix, 'doggystyle', 'doggy', 'misionero', 'cowgirl', 'follando'];
-        const alt = buscarTagEnPack(chica, claves, false) || normalizarTag(chica, poseFix, false);
-        if (alt && !/hablando/i.test(alt)) {
-          log('Tag corregido hablando→pose:', tag, '→', alt);
-          tag = alt;
-        }
+      const alt = resolverTagContinuidadChica(chica, textoBot, soloNoSex);
+      if (alt && !/hablando/i.test(alt)) {
+        log('Tag corregido hablando→pose/prev:', tag, '→', alt);
+        tag = alt;
       }
     }
 
@@ -2779,7 +2796,8 @@ export async function enviarMensaje(mensajeUsuario) {
         log('Pregunta durante sexo activo → NO forzar hablando, mantener escena');
       }
       const otrasEnTurno = bloques.map((x) => x.chica).filter((c) => c && c !== b.chica && c !== 'Aldo' && c !== 'Sistema');
-      qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex, estado.accionActual, { otrasChicas: otrasEnTurno });
+      const prevChica = (estado.accionPorChica && estado.accionPorChica[b.chica]) || estado.accionActual;
+      qwen = await elegirTagConQwen(b.chica, mensajeUsuario, b.texto, ahoraSoloNoSex, prevChica, { otrasChicas: otrasEnTurno });
     }
     let tagFinal = qwen.tag || 'hablando';
 
@@ -2830,6 +2848,16 @@ export async function enviarMensaje(mensajeUsuario) {
     try {
       textoFinal = await rearmarTextoSegunTag(b.chica, b.texto, media.tag || tagFinal, mensajeUsuario);
     } catch (_) {}
+
+    // Guardar pose por chica para continuidad en multi
+    if (media.tag && !/hablando|enojada|sonrojada|celos/i.test(media.tag) && typeof esTagSex === 'function' && esTagSex(media.tag)) {
+      if (!estado.accionPorChica) estado.accionPorChica = {};
+      estado.accionPorChica[b.chica] = media.tag;
+    } else if (media.tag && detectarPoseSexualEnTexto(b.texto)) {
+      if (!estado.accionPorChica) estado.accionPorChica = {};
+      const cont = resolverTagContinuidadChica(b.chica, b.texto, false);
+      if (cont) estado.accionPorChica[b.chica] = cont;
+    }
 
     partes.push({
       chica: b.chica,
@@ -2901,6 +2929,7 @@ export async function enviarMensaje(mensajeUsuario) {
     log('accionActual: acto entre otros → no actualizar');
   } else if (multiMixtoTurno || esTagGrupalLargo) {
     estado.accionActual = null;
+  estado.accionPorChica = {};
     log('accionActual: multi/grupal → sin continuidad global');
   } else if (tagPrincipal && tagPrincipal !== 'hablando') {
     estado.accionActual = tagPrincipal;
@@ -3002,6 +3031,7 @@ export function resetChat() {
   estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
+  estado.accionPorChica = {};
   estado.relacion = RELACION.DESCONOCIDA;
   estado.relacionPorChica = {};
   estado.vinculosNPC = {};
@@ -3030,6 +3060,7 @@ export function volverAlSelector() {
   estado.eventoPendienteReaccion = null;
   estado.outfitActual = null;
   estado.accionActual = null;
+  estado.accionPorChica = {};
   estado.relacion = RELACION.DESCONOCIDA;
   estado.relacionPorChica = {};
   estado.vinculosNPC = {};
