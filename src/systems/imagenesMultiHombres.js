@@ -16,6 +16,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  ESCENAS (agregá solo con URL real)
 // ---------------------------------------------------------------------------
 const ESCENAS = {
+  follando_en_el_aire_nino_recibe_por_el_ano_y_por_la_concha: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/multi_hombres/follando_en_el_aire_nino_recibe_por_el_ano_y_por_la_concha.jpg',
+    descripcion: 'nino follada por dos  hombres por el ano y por el coño en el aire',
+    audio: ''
+  },
+
   nino_tiene_enfrente_dos_pollas: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/multi_hombres/nino_tiene_enfrente_dos_pollas.jpg',
     descripcion: 'Nino mira dos pollas que estan frente a ella',
