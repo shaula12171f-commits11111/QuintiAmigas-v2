@@ -801,41 +801,171 @@ function detectarPersonajesEnContexto(textoUsuario) {
 }
 
 
-/** Registra hechos sexuales/de escena que NO se pueden olvidar (append-only). */
-function registrarHechosDesdeIntercambio(mensajeUsuario, respuestaBot = '') {
-  const u = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
-  const b = String(respuestaBot || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
-  const t = u + ' ' + b;
-  const ch = estado.chica || 'la chica';
-  const add = (h) => {
-    if (!h) return;
-    if (!estado.hechos.includes(h)) {
-      estado.hechos.push(h);
-      log('Hecho fijo:', h);
+/** Añade hecho fijo sin duplicar; opcionalmente reemplaza hechos viejos de la misma “clave”. */
+function addHechoFijo(h, claveReemplazo = null) {
+  if (!h) return;
+  if (!Array.isArray(estado.hechos)) estado.hechos = [];
+  if (claveReemplazo) {
+    const re = new RegExp(claveReemplazo, 'i');
+    estado.hechos = estado.hechos.filter((x) => !re.test(String(x)));
+  }
+  if (!estado.hechos.includes(h)) {
+    estado.hechos.push(h);
+    log('Hecho fijo:', h);
+  }
+  estado.hechos = estado.hechos.slice(-24);
+}
+
+/**
+ * Declaraciones explícitas del usuario sobre vínculos:
+ * "Nino es mi novia", "Miku es la novia de Aldo"
+ */
+function aplicarDeclaracionesVinculoUsuario(mensajeUsuario) {
+  const t = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const chicas = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'];
+  if (!estado.vinculosNPC) estado.vinculosNPC = {};
+
+  // 1) Primero: "X es (la) novia de Aldo" (más específico)
+  for (const c of chicas) {
+    const cl = c.toLowerCase();
+    const esNoviaAldo =
+      new RegExp(`\\b${cl}\\s+es\\s+(la\\s+)?novia\\s+de\\s+aldo\\b`).test(t) ||
+      new RegExp(`\\b${cl}\\s+novia\\s+de\\s+aldo\\b`).test(t) ||
+      new RegExp(`\\bla\\s+novia\\s+de\\s+aldo\\s+es\\s+${cl}\\b`).test(t);
+    if (esNoviaAldo) {
+      estado.vinculosNPC.Aldo = `novio de ${c}`;
+      // vínculo con usuario: no es novia de él
+      if (getRelacionChica(c) === RELACION.NOVIA || getRelacionChica(c) === RELACION.SEXFRIEND) {
+        setRelacionChica(c, RELACION.CONOCIDA);
+      }
+      addHechoFijo(`${c} es novia de Aldo (no del usuario)`, `${c} es novia`);
     }
+  }
+
+  // 2) "X es mi novia" (sin "de aldo")
+  for (const c of chicas) {
+    const cl = c.toLowerCase();
+    const esMia =
+      new RegExp(`\\b${cl}\\s+es\\s+mi\\s+novia\\b`).test(t) ||
+      new RegExp(`\\bmi\\s+novia\\s+es\\s+${cl}\\b`).test(t) ||
+      new RegExp(`\\b${cl}\\s+mi\\s+novia\\b`).test(t);
+    // evitar falso positivo si en la misma frase es novia de aldo
+    const esDeAldo = new RegExp(`\\b${cl}\\s+es\\s+(la\\s+)?novia\\s+de\\s+aldo\\b`).test(t);
+    if (esMia && !esDeAldo) {
+      setRelacionChica(c, RELACION.NOVIA);
+      addHechoFijo(`${c} es novia del usuario (declarado)`, `${c} es novia del usuario`);
+    }
+    if (new RegExp(`\\b${cl}\\s+es\\s+mi\\s+sexfriend\\b|\\b${cl}\\s+sexfriend\\b`).test(t)) {
+      setRelacionChica(c, RELACION.SEXFRIEND);
+      addHechoFijo(`${c} es sexfriend del usuario (declarado)`);
+    }
+  }
+}
+
+/** Parsea “aldo folla a nino doggy y yo follo a miku en misionero con condon” */
+function registrarHechosDesdeIntercambio(mensajeUsuario, respuestaBot = '') {
+  const u = String(mensajeUsuario || '');
+  const uLow = u.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const bLow = String(respuestaBot || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+
+  aplicarDeclaracionesVinculoUsuario(u);
+
+  const chicas = ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'];
+  const canon = (n) => {
+    const x = String(n || '').toLowerCase();
+    return ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'].find((c) => c.toLowerCase() === x) || n;
   };
 
-  if (/\bmisioner|misionero\b/.test(t)) add(`Follaron en posición misionero (${ch})`);
-  if (/\bdoggy|doggystyle|a cuatro|perrito\b/.test(t)) add(`Follaron en doggy/perrito (${ch})`);
-  if (/\bcowgirl|vaquera\b/.test(t)) add(`Follaron en vaquera/cowgirl (${ch})`);
-  if (/\bstand\s*fuck|standfuck|de pie\b/.test(t)) add(`Follaron de pie/standfuck (${ch})`);
-  if (/\bcondon|condón|preservativo\b/.test(t)) add(`Hubo condón en la escena con ${ch}`);
-  if (/\b(saco|saque|saqué|quitar|quite|quité)\b.*\bcondon|condón|preservativo\b/.test(u) ||
-      /\bsin condon|sin condón\b/.test(u)) {
-    add(`Usuario se quitó / dejó de usar el condón`);
-  }
-  if (/\b(me corro|me corrio|me corrí|eyacul)\b/.test(u) && /\bcara|facial|rostro\b/.test(u)) {
-    add(`Usuario se corrió en la cara de ${ch}`);
-  }
-  if (/\bsemen\b.*\bcara|cara\b.*\bsemen|facial\b/.test(t)) add(`Semen en la cara de ${ch}`);
-  if (/\bchup|mamad|oral|bolas|glande\b/.test(u)) {
-    if (/\bbolas|testicul\b/.test(u)) add(`Oral en bolas (${ch})`);
-    else if (/\bglande|puntita|punta\b/.test(u)) add(`Oral en glande/punta (${ch})`);
-    else add(`Hubo oral con ${ch}`);
+  function poseDeFragmento(frag) {
+    const f = frag.toLowerCase();
+    if (/doggy|doggystyle|a cuatro|perrito/.test(f)) return 'doggy';
+    if (/misioner|misionero/.test(f)) return 'misionero';
+    if (/cowgirl|vaquera|horcajadas/.test(f)) return 'cowgirl';
+    if (/stand\s*fuck|standfuck|de pie/.test(f)) return 'standfuck';
+    if (/chup|mamad|oral|bolas/.test(f)) return 'oral';
+    if (/foll|penetr|cog/.test(f)) return 'sexo';
+    return null;
   }
 
-  estado.hechos = estado.hechos.slice(-20);
+  // Partir por "y" / comas cuando hay varios actos
+  const trozos = uLow.split(/\s+y\s+|(?<=[.!;])\s+/).map((s) => s.trim()).filter(Boolean);
+  if (!trozos.length) trozos.push(uLow);
+
+  for (const frag of trozos) {
+    const pose = poseDeFragmento(frag);
+    if (!pose) continue;
+    const conCondon = /condon|condón|preservativo/.test(frag);
+    // ¿Quién penetra?
+    const aldoActua = /\baldo\b/.test(frag) && /\b(foll|penetr|cog|mete|doggy|mision)/.test(frag);
+    const yoActuo = /\b(yo|follo|follare|follaré|me la follo|la follo)\b/.test(frag) ||
+      (!aldoActua && /\b(follo|follando)\b/.test(frag));
+
+    for (const cl of chicas) {
+      if (!new RegExp(`\\b${cl}\\b`).test(frag)) continue;
+      const C = canon(cl);
+      const pareja = aldoActua && !yoActuo ? 'Aldo'
+        : yoActuo || /\b(yo|follo)\b/.test(frag) ? 'usuario'
+        : aldoActua ? 'Aldo' : 'usuario';
+      // Si "aldo folla a nino" → pareja Aldo; "yo follo a miku" → usuario
+      let par = 'usuario';
+      if (/\baldo\b/.test(frag) && new RegExp(`(foll|penetr|cog).{0,20}${cl}|${cl}.{0,20}(foll|doggy|mision)`).test(frag) &&
+          !new RegExp(`\\b(yo|follo a ${cl}|a ${cl}.*(yo|follo))`).test(frag)) {
+        // aldo folla a X
+        if (new RegExp(`aldo\\s+(foll|la folla|folla a)\\s+${cl}|foll\\w*\\s+a\\s+${cl}`).test(frag) && /\baldo\b/.test(frag)) {
+          par = /\byo\b|\bfollo a\b/.test(frag) && new RegExp(`follo a ${cl}|a ${cl}`).test(frag) && !new RegExp(`aldo.*${cl}`).test(frag)
+            ? 'usuario' : 'Aldo';
+        }
+      }
+      if (new RegExp(`aldo\\s+folla\\s+a\\s+${cl}|aldo\\s+folla\\s+${cl}`).test(frag)) par = 'Aldo';
+      if (new RegExp(`(yo\\s+)?follo\\s+a\\s+${cl}|a\\s+${cl}\\s+en\\s+`).test(frag) && !new RegExp(`aldo\\s+folla\\s+a\\s+${cl}`).test(frag)) {
+        par = 'usuario';
+      }
+      // fragmento solo de una pareja
+      if (new RegExp(`aldo\\s+folla\\s+a\\s+${cl}`).test(frag)) par = 'Aldo';
+      if (new RegExp(`follo\\s+a\\s+${cl}`).test(frag)) par = 'usuario';
+
+      const cond = conCondon ? ' con condón' : '';
+      addHechoFijo(
+        `${C} en ${pose} con ${par}${cond}`.replace(/\s+/g, ' ').trim(),
+        `${C} en (doggy|misionero|cowgirl|standfuck|oral|sexo)`
+      );
+    }
+  }
+
+  // Facial / quitar condón genéricos
+  if (/\b(saco|saque|saqué|quitar)\b.*\bcondon|\bsin condon\b/.test(uLow)) {
+    addHechoFijo('Usuario se quitó / dejó de usar el condón');
+  }
+  const ch = estado.chica || 'la chica';
+  if (/\b(me corro|me corrí|eyacul)\b/.test(uLow) && /\bcara|facial|rostro\b/.test(uLow)) {
+    // a quién
+    let target = ch;
+    for (const cl of chicas) {
+      if (new RegExp(`\\b${cl}\\b`).test(uLow)) { target = canon(cl); break; }
+    }
+    addHechoFijo(`Usuario se corrió en la cara de ${target}`, `se corrió en la cara`);
+  }
+
+  // Desde respuesta: poses por bloque implícito (si bot describe doggy de alguien)
+  if (bLow) {
+    for (const cl of chicas) {
+      const C = canon(cl);
+      if (!new RegExp(`\\b${cl}\\b`).test(bLow)) continue;
+      // ventana simple: si menciona chica cerca de doggy/aldo
+      if (new RegExp(`${cl}[\\s\\S]{0,120}(doggy|a cuatro|perrito)|(doggy|a cuatro)[\\s\\S]{0,80}${cl}`).test(bLow)) {
+        const conAldo = /aldo/.test(bLow);
+        // no pisar si ya hay hecho más preciso del usuario este turno
+        const ya = (estado.hechos || []).some((h) => new RegExp(`${C} en doggy`).test(h));
+        if (!ya) addHechoFijo(`${C} en doggy con ${conAldo ? 'Aldo' : 'usuario'}`, `${C} en doggy`);
+      }
+      if (new RegExp(`${cl}[\\s\\S]{0,120}misioner|misioner[\\s\\S]{0,80}${cl}`).test(bLow)) {
+        const ya = (estado.hechos || []).some((h) => new RegExp(`${C} en misionero`).test(h));
+        if (!ya) addHechoFijo(`${C} en misionero con usuario`, `${C} en misionero`);
+      }
+    }
+  }
 }
+
 
 
 function getRelacionChica(chica) {
@@ -911,10 +1041,12 @@ SOLO JSON:
 
 Reglas:
 - Clave por cada chica relevante.
-- "novia" = novia DEL USUARIO, solo si ESA chica aceptó.
-- Si Ichika es novia de Aldo → vinculos_npc, no relaciones.Ichika=novia.
-- sexfriend = sexo con el usuario sin exclusividad.
-- No subir a novia solo porque él lo pidió.`;
+- "novia" = novia DEL USUARIO, solo si ESA chica aceptó ser novia de él.
+- Si el usuario dice "Miku es la novia de Aldo" → vinculos_npc: {"Aldo":"novio de Miku"} y relaciones.Miku NO debe ser novia ni sexfriend del usuario solo por follar en intercambio.
+- Sexo puntual en intercambio de parejas ≠ convertirla en sexfriend automáticamente.
+- sexfriend = vínculo sexual habitual con el usuario sin ser pareja.
+- No subir a novia solo porque él lo pidió.
+- Respetá declaraciones explícitas del usuario sobre quién es novia de quién.`;
 
   const user = `Mapa actual: ${JSON.stringify(mapaActual)}
 NPC: ${JSON.stringify(estado.vinculosNPC || {})}
@@ -957,6 +1089,13 @@ JSON:`;
         }
       }
       if (actual === RELACION.NOVIA && (candidata === RELACION.DESCONOCIDA || candidata === RELACION.CONOCIDA)) continue;
+      // Si es novia de un NPC, no marcarla sexfriend/novia del usuario por un trío/intercambio
+      const npcTxt = JSON.stringify(estado.vinculosNPC || {}).toLowerCase();
+      if ((candidata === RELACION.SEXFRIEND || candidata === RELACION.NOVIA) &&
+          npcTxt.includes(ch.toLowerCase()) && /novio de|novia de/.test(npcTxt)) {
+        log('Relacion: no pisar vínculo NPC de', ch);
+        continue;
+      }
       if (candidata !== actual) {
         setRelacionChica(ch, candidata);
         const hecho = `Relación con ${ch} → ${candidata}`;
@@ -2102,10 +2241,12 @@ CLIMA: (charla | coqueteo | rechazo | sexo | after)
 
 Reglas:
 - Máximo ~400 palabras, denso, tercera persona.
-- HECHOS_FIJOS del sistema son sagrados: posiciones (misionero/doggy/etc.), condón, corridas, eventos de celular. NUNCA digas que la primera posición fue otra si HECHOS_FIJOS dice misionero.
-- Si llegó un mensaje de celular/foto, ANOTALO en HECHOS pero NO borres la acción sexual en curso en ACCIONES.
-- Conservá continuidad: no inventes que paró el oral/penetración si el usuario no lo dijo.
-- Si el usuario fue rechazado por ir muy rápido, anotalo en HECHOS.`;
+- ACCIONES = solo el estado AHORA (este turno): quién hace qué CON QUIÉN (ej. "Nino: doggy con Aldo; Miku: doggy con usuario + condón").
+- HECHOS_FIJOS del sistema son sagrados. Copialos. NUNCA contradigas pose/pareja/condón.
+- RELACION: una entrada por chica con el USUARIO + NPCs (ej. "Aldo: novio de Miku"). Si Miku es novia de Aldo, NO la marques sexfriend/novia del usuario salvo que HECHOS_FIJOS lo digan.
+- LUGAR: solo si está claro en el resumen anterior o el intercambio. Si no, "no definido". PROHIBIDO inventar café/oficina.
+- No mezcles poses viejas de otra escena si el turno actual las reemplazó (preferí el hecho más reciente por chica+pose).
+- Evento de celular: anotá en HECHOS sin borrar el sexo en curso.`;
 
   const hechosFijos = (estado.hechos || []).slice(-16).join('\n- ') || '(ninguno aún)';
   const user = `RESUMEN ANTERIOR:
