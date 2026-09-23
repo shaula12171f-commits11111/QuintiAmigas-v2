@@ -887,9 +887,13 @@ function construirContexto(mensajeUsuarioActual = '') {
     `Presentes: ${estado.chicasActivas.join(', ')}`
   ];
   if (estado.resumenConversacion && estado.resumenConversacion.trim()) {
-    lineas.push('### RESUMEN DE LA CONVERSACIÓN (lo anterior comprimido; el diálogo reciente va aparte como mensajes)');
+    lineas.push('### MAPA DE ESCENA / RESUMEN (memoria; no contradigas hechos ni borres la acción en curso por un evento de celular)');
     lineas.push(estado.resumenConversacion.trim());
   }
+  // Ritmo según relación (desconocidos ≠ sexfriends ≠ novios)
+  try {
+    lineas.push(armarBloqueRitmoRelacion(mensajeUsuarioActual));
+  } catch (_) {}
   if (estado.ubicacion) {
     const lug = getLugar(estado.ubicacion);
     lineas.push(`Lugar actual: ${lug ? lug.nombre : estado.ubicacion}`);
@@ -1852,22 +1856,41 @@ function elegirTag(chica, tagModelo, textoBloque, textoUsuario, soloNoSex, inten
 /** Actualiza el resumen progresivo de la conversación (único contexto histórico enviado a la IA). */
 async function actualizarResumenProgresivo(mensajeUsuario, respuestaBot) {
   const prev = (estado.resumenConversacion || '').trim();
-  const system = `Sos un asistente que mantiene un resumen corto y útil de un roleplay erótico adulto.
-Actualizá el resumen con el último intercambio. Reglas:
-- Máximo 350 palabras.
-- Conservá: personajes presentes, lugar, relación, ropa/estado físico, acciones sexuales relevantes, hechos importantes, tono emocional.
-- Escribí en tercera persona, claro y denso (sin relleno).
-- Si no había resumen previo, creá uno desde cero con este intercambio.
-- Respondé SOLO con el resumen actualizado, sin título ni comillas.`;
+  const presentes = (estado.chicasActivas || []).join(', ') || estado.chica || '?';
+  const system = `Mantenés un MAPA DE ESCENA (resumen estructurado) de un roleplay erótico adulto.
+Actualizá el resumen con el último intercambio. Respondé SOLO el resumen, sin título.
+
+FORMATO OBLIGATORIO (las etiquetas en mayúsculas):
+PRESENTES: (quiénes están en escena, incl. NPCs si aparecen)
+ACCIONES: (quién hace qué ahora; ej. "Nino: oral en bolas; Ichika: mira con celos")
+LUGAR: (sitio concreto)
+ROPA_VISUAL: (ropa, cuerpo, objetos notables: condón, celular, falda, etc.)
+RELACION: (con la chica principal: desconocida/conocida/amiga/sexfriend/novia)
+HECHOS: (acuerdos, rechazos, eventos de celular/foto, promesas; no borres hechos viejos importantes)
+PENDIENTES: (lo que quedó a medias)
+CLIMA: (charla | coqueteo | rechazo | sexo | after)
+
+Reglas:
+- Máximo ~400 palabras, denso, tercera persona.
+- Si llegó un mensaje de celular/foto, ANOTALO en HECHOS pero NO borres la acción sexual en curso en ACCIONES.
+- Conservá continuidad: no inventes que paró el oral si el usuario no lo dijo.
+- Si el usuario fue rechazado por ir muy rápido, anotalo en HECHOS.`;
 
   const user = `RESUMEN ANTERIOR:
-${prev || '(vacío — primer mensaje)'}
+${prev || '(vacío)'}
+
+ESTADO ACTUAL DEL SISTEMA:
+Presentes sistema: ${presentes}
+Relación sistema: ${estado.relacion}
+Lugar sistema: ${estado.ubicacion || 'no definido'}
+Acción tag: ${estado.accionActual || 'ninguna'}
+Fase: ${estado.fase}
 
 ÚLTIMO INTERCAMBIO:
-Usuario: ${String(mensajeUsuario || '').slice(0, 600)}
-${estado.chica || 'Bot'}: ${String(respuestaBot || '').slice(0, 900)}
+Usuario: ${String(mensajeUsuario || '').slice(0, 700)}
+Respuesta: ${String(respuestaBot || '').slice(0, 1100)}
 
-Escribí el resumen actualizado:`;
+Escribí el resumen actualizado en el FORMATO OBLIGATORIO:`;
 
   try {
     const raw = await llamarGroq(
@@ -1877,20 +1900,26 @@ Escribí el resumen actualizado:`;
       ],
       {
         model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : MODELO,
-        temperature: 0.3,
-        max_tokens: 500,
+        temperature: 0.25,
+        max_tokens: 650,
         proposito: 'resumen-progresivo'
       }
     );
     const limpio = String(raw || '').trim();
-    if (limpio && limpio.length > 20) {
-      estado.resumenConversacion = limpio.slice(0, 2500);
-      log('Resumen actualizado (' + estado.resumenConversacion.length + ' chars)');
+    if (limpio && limpio.length > 30) {
+      estado.resumenConversacion = limpio.slice(0, 3200);
+      log('Resumen mapa escena (' + estado.resumenConversacion.length + ' chars)');
     }
   } catch (e) {
-    const linea = `Usuario: ${String(mensajeUsuario || '').slice(0, 120)} | ${estado.chica}: ${String(respuestaBot || '').slice(0, 160)}`;
-    estado.resumenConversacion = ((prev ? prev + '\n' : '') + linea).slice(-2000);
-    log('Resumen fallback local');
+    const linea =
+      `PRESENTES: ${presentes}\n` +
+      `ACCIONES: ${estado.accionActual || 'charla'}\n` +
+      `LUGAR: ${estado.ubicacion || '?'}\n` +
+      `RELACION: ${estado.relacion}\n` +
+      `HECHOS: Usuario: ${String(mensajeUsuario || '').slice(0, 100)} | Bot: ${String(respuestaBot || '').slice(0, 140)}\n` +
+      `CLIMA: ${estado.fase === FASE.INTIMO ? 'sexo' : 'charla'}`;
+    estado.resumenConversacion = (prev ? prev + '\n---\n' + linea : linea).slice(-2800);
+    log('Resumen fallback local estructurado');
   }
 }
 
@@ -1934,6 +1963,16 @@ function consumirEventoHistoriaSiToca(numMensaje) {
 
     // Marcar como disparado
     estado.eventosDisparados = [...disparados, eid];
+    // Anotar en resumen sin borrar acción en curso
+    try {
+      const nota = `HECHOS: evento ${eid} — ${String(ev.texto || '').slice(0, 180)}`;
+      const prevR = (estado.resumenConversacion || '').trim();
+      if (prevR && !prevR.includes(eid)) {
+        estado.resumenConversacion = (prevR + '\n' + nota).slice(0, 3200);
+      } else if (!prevR) {
+        estado.resumenConversacion = nota;
+      }
+    } catch (_) {}
     const de = ev.de || 'Sistema';
     // Imagen del evento: resolver con la chica del evento (ej. Ichika), no la principal
     const media = resolverMediaEventoHistoria(de !== 'Sistema' ? de : estado.chica, ev.imagen);
@@ -1995,6 +2034,11 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.accionActual) {
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
+  system += '\n## ESTILO DE ESCRITURA\n';
+  system += 'Escribí en PROSA NARRATIVA (no telegráfica): 2–5 párrafos cuando el turno lo amerite. Incluí lugar, ropa/cuerpo si importa, gestos, silencios y diálogo natural. ';
+  system += 'Evitá respuestas de 1–2 líneas. Si es multi, cada [Nombre]: también con sustancia.\n';
+  system += '\n## MEMORIA\n';
+  system += 'Usá el MAPA DE ESCENA del contexto (PRESENTES, ACCIONES, HECHOS…). Si hubo evento de celular, reaccioná pero NO olvides la acción sexual/charla en curso.\n';
   // Evento de historia EN ESTE TURNO: dos bloques de la chica + mensaje ajeno en el medio
   if (eventoHistoria && eventoHistoria.texto) {
     const de = eventoHistoria.de || 'Alguien';
