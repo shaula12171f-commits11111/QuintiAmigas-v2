@@ -73,7 +73,9 @@ let estado = {
 
   outfitActual: null,       // legacy: { chica, tag, descripcion }
   accionActual: null,
-  relacion: RELACION.DESCONOCIDA,
+  relacion: RELACION.DESCONOCIDA, // espejo de la chica principal
+  relacionPorChica: {}, // { Nino: 'novia', Miku: 'sexfriend', ... }
+  vinculosNPC: {}, // { Aldo: 'novio de Ichika' }
   mensajesCount: 0,         // para progresion automatica de relacion
   ultimoMensajeUsuario: null, // para boton refresh
   // Ropa por chica: { [chica]: { actual, anterior, tagActual, tagAnterior } }
@@ -602,6 +604,8 @@ export async function iniciarChatLasCinco() {
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
+  estado.relacionPorChica = {};
+  estado.vinculosNPC = {};
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
@@ -639,6 +643,8 @@ export function iniciarChatLibre(chica) {
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
+  estado.relacionPorChica = {};
+  estado.vinculosNPC = {};
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica[chica] = { actual: 'desconocida', anterior: null, tagActual: null, tagAnterior: null };
@@ -663,6 +669,8 @@ export function iniciarHistoria(chica, historiaId) {
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.CONOCIDA; // en historias ya se conocen un poco
+  estado.relacionPorChica = { [chica]: RELACION.CONOCIDA };
+  estado.vinculosNPC = {};
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   const texto = rellenarNombre(h.mensajeBienvenida, estado.nombreUsuario);
@@ -829,6 +837,37 @@ function registrarHechosDesdeIntercambio(mensajeUsuario, respuestaBot = '') {
   estado.hechos = estado.hechos.slice(-20);
 }
 
+
+function getRelacionChica(chica) {
+  const c = chica || estado.chica;
+  if (!c) return RELACION.DESCONOCIDA;
+  if (estado.relacionPorChica && estado.relacionPorChica[c]) return estado.relacionPorChica[c];
+  if (c === estado.chica && estado.relacion) return estado.relacion;
+  return RELACION.DESCONOCIDA;
+}
+
+function setRelacionChica(chica, rel) {
+  if (!chica || !rel) return;
+  if (!estado.relacionPorChica) estado.relacionPorChica = {};
+  estado.relacionPorChica[chica] = rel;
+  if (chica === estado.chica) estado.relacion = rel;
+  log('Relacion', chica, '→', rel);
+}
+
+function textoMapaRelaciones() {
+  const lines = [];
+  const mapa = estado.relacionPorChica || {};
+  const names = new Set([...(estado.chicasActivas || []), estado.chica].filter(Boolean));
+  for (const n of names) lines.push(`${n}: ${getRelacionChica(n)}`);
+  for (const [n, r] of Object.entries(mapa)) {
+    if (!names.has(n)) lines.push(`${n}: ${r}`);
+  }
+  for (const [n, v] of Object.entries(estado.vinculosNPC || {})) {
+    lines.push(`NPC ${n}: ${v}`);
+  }
+  return lines.length ? lines.join(' | ') : `(${estado.chica || '?'}: ${estado.relacion})`;
+}
+
 /** Normaliza etiqueta de relación de la IA. */
 function normalizarEtiquetaRelacion(raw) {
   const t = String(raw || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -849,35 +888,39 @@ async function actualizarRelacionAutomatica(mensajeUsuario, respuestaBot) {
   const m = String(mensajeUsuario || '');
   const r = String(respuestaBot || '');
   const mix = (m + ' ' + r).toLowerCase();
+  const principal = estado.chica;
 
-  // Piso suave: tras unos mensajes ya no son total desconocidos
-  if (estado.relacion === RELACION.DESCONOCIDA && estado.mensajesCount >= 3) {
-    estado.relacion = RELACION.CONOCIDA;
-    log('Relacion piso → conocida');
+  if (principal && getRelacionChica(principal) === RELACION.DESCONOCIDA && estado.mensajesCount >= 3) {
+    setRelacionChica(principal, RELACION.CONOCIDA);
   }
 
-  const haySenal = /novia|novio|pareja|te amo|te quiero|sexfriend|amigos con derechos|solo sexo|relacion|relación|seamos|rechaz|no quiero|no todavía|no todavia|amigos\b|conocer/i.test(mix)
+  const haySenal = /novia|novio|pareja|te amo|te quiero|sexfriend|amigos con derechos|solo sexo|relacion|relación|seamos|rechaz|no quiero|no todavía|no todavia|amigos\b|conocer|aldo|rompe|termin/i.test(mix)
     || estado.mensajesCount % 5 === 0;
-
   if (!haySenal) return;
 
-  const actual = estado.relacion || RELACION.DESCONOCIDA;
-  const system = `Clasificás el VÍNCULO actual entre el usuario (hombre) y la chica principal en un roleplay.
-Respondé SOLO JSON: {"relacion":"desconocida|conocida|amiga|sexfriend|novia","motivo":"frase corta"}
+  const presentes = [...new Set([...(estado.chicasActivas || []), principal].filter(Boolean))];
+  const mapaActual = {};
+  for (const c of presentes) mapaActual[c] = getRelacionChica(c);
+
+  const system = `Clasificás VÍNCULOS en roleplay erótico multi.
+El usuario (hombre) puede tener relación DISTINTA con cada chica.
+NPCs (Aldo, etc.) pueden ser novios de una chica.
+
+SOLO JSON:
+{"relaciones":{"Nino":"desconocida|conocida|amiga|sexfriend|novia"},"vinculos_npc":{"Aldo":"novio de Ichika"},"motivo":"frase"}
 
 Reglas:
-- "novia" SOLO si ELLA aceptó noviazgo/pareja de forma clara. Si él pidió y ella rechazó → no novia.
-- "sexfriend" si hay sexo habitual/aceptado sin exclusividad de pareja.
-- "amiga" si hay confianza/charla sin ser pareja ni solo sexo.
-- "conocida" si apenas interactúan.
-- "desconocida" si casi no se conocen.
-- No subas de nivel solo porque él lo pidió.
-- Relación actual del sistema: ${actual}. Preferí coherencia con el último intercambio.`;
+- Clave por cada chica relevante.
+- "novia" = novia DEL USUARIO, solo si ESA chica aceptó.
+- Si Ichika es novia de Aldo → vinculos_npc, no relaciones.Ichika=novia.
+- sexfriend = sexo con el usuario sin exclusividad.
+- No subir a novia solo porque él lo pidió.`;
 
-  const user = `Relación sistema ahora: ${actual}
-Mensajes del usuario (conteo): ${estado.mensajesCount}
+  const user = `Mapa actual: ${JSON.stringify(mapaActual)}
+NPC: ${JSON.stringify(estado.vinculosNPC || {})}
+Presentes: ${presentes.join(', ')}
 Usuario: ${m.slice(0, 500)}
-Chica: ${r.slice(0, 700)}
+Respuesta: ${r.slice(0, 800)}
 JSON:`;
 
   try {
@@ -888,9 +931,9 @@ JSON:`;
       ],
       {
         model: (typeof MODELO_TAGS !== 'undefined' && MODELO_TAGS) ? MODELO_TAGS : MODELO,
-        temperature: 0.1,
-        max_tokens: 120,
-        proposito: 'clasificar-relacion'
+        temperature: 0.15,
+        max_tokens: 250,
+        proposito: 'clasificar-relacion-multi'
       }
     );
     let parsed = null;
@@ -898,37 +941,37 @@ JSON:`;
       const j = String(raw || '').match(/\{[\s\S]*\}/);
       parsed = j ? JSON.parse(j[0]) : null;
     } catch (_) {}
-    const candidata = normalizarEtiquetaRelacion(parsed?.relacion || raw);
-    if (!candidata) return;
+    if (!parsed) return;
 
-    // Validación de saltos: no saltar a novia desde desconocida/conocida en un golpe
-    const orden = RELACION_ORDEN;
-    const iAct = orden.indexOf(actual);
-    const iNew = orden.indexOf(candidata);
-    if (candidata === RELACION.NOVIA && (actual === RELACION.DESCONOCIDA || actual === RELACION.CONOCIDA)) {
-      // Solo si ella aceptó en el texto
-      if (!/\b(s[ií]|acepto|está bien|esta bien|seamos novios|ok.*novia|novios)\b/i.test(r)) {
-        log('Relacion IA novia bloqueada (sin aceptación clara):', parsed?.motivo || '');
-        return;
+    const rels = parsed.relaciones || parsed.relations || {};
+    for (const [nombre, val] of Object.entries(rels)) {
+      const ch = TODAS_CHICAS.find((c) => c.toLowerCase() === String(nombre).toLowerCase());
+      if (!ch) continue;
+      const candidata = normalizarEtiquetaRelacion(val);
+      if (!candidata) continue;
+      const actual = getRelacionChica(ch);
+      if (candidata === RELACION.NOVIA && (actual === RELACION.DESCONOCIDA || actual === RELACION.CONOCIDA)) {
+        if (!/\b(s[ií]|acepto|está bien|esta bien|seamos novios|novios)\b/i.test(r)) {
+          log('Novia bloqueada para', ch);
+          continue;
+        }
+      }
+      if (actual === RELACION.NOVIA && (candidata === RELACION.DESCONOCIDA || candidata === RELACION.CONOCIDA)) continue;
+      if (candidata !== actual) {
+        setRelacionChica(ch, candidata);
+        const hecho = `Relación con ${ch} → ${candidata}`;
+        if (!estado.hechos.includes(hecho)) {
+          estado.hechos.push(hecho);
+          estado.hechos = estado.hechos.slice(-20);
+        }
       }
     }
-    // No degradar novia → desconocida de golpe
-    if (actual === RELACION.NOVIA && (candidata === RELACION.DESCONOCIDA || candidata === RELACION.CONOCIDA)) {
-      log('Relacion IA degradación brusca ignorada');
-      return;
-    }
-
-    if (candidata !== actual) {
-      estado.relacion = candidata;
-      log('Relacion IA →', candidata, parsed?.motivo || '');
-      const hecho = `Relación pasó a ${candidata}` + (parsed?.motivo ? ` (${parsed.motivo})` : '');
-      if (!estado.hechos.includes(hecho)) {
-        estado.hechos.push(hecho);
-        estado.hechos = estado.hechos.slice(-20);
-      }
+    const npcs = parsed.vinculos_npc || parsed.vinculosNPC || {};
+    if (npcs && typeof npcs === 'object') {
+      estado.vinculosNPC = { ...(estado.vinculosNPC || {}), ...npcs };
     }
   } catch (e) {
-    log('Relacion IA falló, se mantiene', actual, e?.message || e);
+    log('Relacion multi IA falló:', e?.message || e);
   }
 }
 
@@ -981,10 +1024,51 @@ function obtenerMensajesRecientesParaIA(n = ULTIMOS_MENSAJES_CONTEXTO) {
     }));
 }
 
+
+function detectarPedidoAcelerado(mensajeUsuario) {
+  const t = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const relacion = /\b(novia|novio|novios|relacion|relación|seamos pareja|quiero que seamos|formemos una relacion|formemos una relación)\b/.test(t);
+  const exposicion = /\b(muestrame|muéstrame|ensename|enséñame|levanta la falda|tu concha|tu coño|enseña el culo)\b/.test(t);
+  const sexo = /\b(foll|cog[eé]|chup|mam[aá]|met[eé]|penetr|sex|oral|anal|doggy|standfuck)\b/.test(t);
+  const publico = /\b(oficina|trabajo|pasillo|impresora|escritorio)\b/.test(t) ||
+    /oficina|trabajo|pasillo/i.test(String(estado.ubicacion || ''));
+  return { relacion, exposicion, sexo, publico };
+}
+
+function armarBloqueRitmoRelacion(mensajeUsuario) {
+  const r = getRelacionChica(estado.chica) || estado.relacion || RELACION.DESCONOCIDA;
+  const p = detectarPedidoAcelerado(mensajeUsuario);
+  const lineas = [
+    `RITMO SOCIAL (con ${estado.chica || '?'} = ${r}):`,
+    `Mapa vínculos: ${textoMapaRelaciones()}`
+  ];
+
+  if (r === RELACION.DESCONOCIDA || r === RELACION.CONOCIDA) {
+    lineas.push('- Apenas se conocen. Ninguna es "fácil".');
+    if (p.relacion) lineas.push('- Pidió NOVIAZGO muy pronto → RECHAZO firme; puede dejar puerta a conocerse despacio.');
+    if (p.sexo || p.exposicion) lineas.push('- Pidió SEXO/exposición muy pronto → RECHAZO claro.');
+    if (p.publico && (p.sexo || p.exposicion)) lineas.push('- Contexto trabajo/público → aún más inaceptable.');
+    if (!p.relacion && !p.sexo && !p.exposicion) lineas.push('- Pedido normal: evaluadora, sin abrirse de golpe.');
+  } else if (r === RELACION.AMIGA) {
+    lineas.push('- Amigos: coqueteo OK; sexo no automático.');
+    if (p.relacion) lineas.push('- Noviazgo: puede dudar, pedir tiempo o aceptar según química.');
+    if (p.sexo && p.publico) lineas.push('- Sexo en público: rechazar el lugar, no necesariamente a la persona.');
+    else if (p.sexo) lineas.push('- Puede aceptar sexo si hay tensión, o frenar con estilo.');
+  } else if (r === RELACION.SEXFRIEND) {
+    lineas.push('- Sexfriends: sexo natural en el vínculo.');
+    if (p.relacion) lineas.push('- Noviazgo: puede aceptar, dudar o seguir como sexfriends.');
+    if (p.publico && p.sexo) lineas.push('- En público: discreción ("aquí no").');
+  } else if (r === RELACION.NOVIA) {
+    lineas.push('- Novios: cariño y sexo naturales; puede negar momento/lugar, no el vínculo entero.');
+  }
+  return lineas.join('\n');
+}
+
 function construirContexto(mensajeUsuarioActual = '') {
   const lineas = [
     `Fase: ${estado.fase}`,
-    `Relacion actual: ${estado.relacion}`,
+    `Relacion principal (${estado.chica || '?'}): ${typeof getRelacionChica === 'function' ? getRelacionChica(estado.chica) : estado.relacion}`,
+    `Mapa de relaciones: ${typeof textoMapaRelaciones === 'function' ? textoMapaRelaciones() : estado.relacion}`,
     'Usuario = HOMBRE (pija y bolas). Las chicas = MUJERES (sin pija ni testículos).',
     'GÉNERO: PROHIBIDO que la chica hable como si tuviera pija o testículos. Las bolas/pija son del usuario.',
     `Chica principal: ${estado.chica}`,
@@ -1972,7 +2056,7 @@ PRESENTES: (quiénes están en escena, incl. NPCs si aparecen)
 ACCIONES: (quién hace qué ahora; ej. "Nino: oral en bolas; Ichika: mira con celos")
 LUGAR: (sitio concreto)
 ROPA_VISUAL: (ropa, cuerpo, objetos notables: condón, celular, falda, etc.)
-RELACION: (con la chica principal: desconocida/conocida/amiga/sexfriend/novia)
+RELACION: (por chica con el usuario, ej. Nino:novia; Miku:sexfriend; NPCs: Aldo novio de Ichika)
 HECHOS: (acuerdos, rechazos, eventos de celular/foto, promesas; no borres hechos viejos importantes)
 PENDIENTES: (lo que quedó a medias)
 CLIMA: (charla | coqueteo | rechazo | sexo | after)
@@ -1993,7 +2077,7 @@ HECHOS_FIJOS DEL SISTEMA (NUNCA los borres, reescribas ni contradigas; copialos 
 
 ESTADO ACTUAL DEL SISTEMA:
 Presentes sistema: ${presentes}
-Relación sistema: ${estado.relacion}
+Relación sistema (mapa): ${typeof textoMapaRelaciones === 'function' ? textoMapaRelaciones() : estado.relacion}
 Lugar sistema: ${estado.ubicacion || 'no definido'}
 Acción tag: ${estado.accionActual || 'ninguna'}
 Fase: ${estado.fase}
@@ -2533,6 +2617,8 @@ export function resetChat() {
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
+  estado.relacionPorChica = {};
+  estado.vinculosNPC = {};
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
@@ -2556,6 +2642,8 @@ export function volverAlSelector() {
   estado.outfitActual = null;
   estado.accionActual = null;
   estado.relacion = RELACION.DESCONOCIDA;
+  estado.relacionPorChica = {};
+  estado.vinculosNPC = {};
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
