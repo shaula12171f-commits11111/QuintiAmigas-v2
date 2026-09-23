@@ -1442,6 +1442,22 @@ function extractAccionRelevanteParaChica(chica, mensajeUsuario, otrasChicas = []
 }
 
 
+
+/** Detecta pose sexual descrita en el texto de la chica (continuar imagen aunque el usuario hable de otra). */
+function detectarPoseSexualEnTexto(texto) {
+  const t = String(texto || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!t) return null;
+  const haySexo = /\b(foll|penetr|polla|verga|pija|embest|empuj|metiend|dentro|coge|cogiend|gem|ano|culo|concha|coño|ritmo|embestida)\b/.test(t);
+  if (!haySexo) return null;
+  if (/\b(doggy|doggystyle|a cuatro|perrito|por detras|por detrás|detras de|detrás de)\b/.test(t)) return 'doggy';
+  if (/\b(misioner|misionero)\b/.test(t)) return 'misionero';
+  if (/\b(vaquera|cowgirl|horcajadas|montand|montánd)\b/.test(t)) return 'cowgirl';
+  if (/\b(stand\s*fuck|standfuck|de pie|contra la pared)\b/.test(t)) return 'standfuck';
+  if (/\b(chup|mamad|oral|en (la )?boca|deepthroat)\b/.test(t)) return 'chupando';
+  if (/\b(69)\b/.test(t)) return '69';
+  return 'follando';
+}
+
 async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = false, accionAnterior = null, opciones = {}) {
   const tags = soloNoSex ? listarTagsNoSex(chica) : listarTags(chica);
   if (!tags.length) return { tag: 'hablando', razon: 'sin_tags', fuente: 'qwen' };
@@ -1457,12 +1473,20 @@ async function elegirTagConQwen(chica, mensajeUsuario, textoBot, soloNoSex = fal
   }
   const sinAccionPropia = /SIN_ACCION_PARA_/i.test(msg);
   if (sinAccionPropia) {
-    // No está en el acto del usuario → no sex-tag de pose
+    // El usuario no la nombró, PERO su texto puede describir que SIGUE en un acto (ej. Aldo la folla doggy)
+    const poseEnBot = detectarPoseSexualEnTexto(textoBot);
+    if (poseEnBot && !soloNoSex) {
+      const claves = [poseEnBot, 'doggystyle', 'doggy', 'misionero', 'cowgirl', 'follando', 'follando_doggy'];
+      let tagPose = buscarTagEnPack(chica, claves, false);
+      if (!tagPose) tagPose = normalizarTag(chica, poseEnBot, false) || poseEnBot;
+      log('Tag por pose en texto bot (sigue el acto):', chica, '→', tagPose);
+      return { tag: tagPose, razon: 'continuidad_pose_en_texto_bot', fuente: 'local_pose' };
+    }
     const emocion = /enoj|celos|furios/i.test(String(textoBot || '')) ? 'enojada'
       : /sonroj|timid/i.test(String(textoBot || '')) ? 'sonrojada'
       : 'hablando';
     const tagSafe = normalizarTag(chica, emocion, true) || 'hablando';
-    log('Tag forzado (sin acción en mensaje):', chica, '→', tagSafe);
+    log('Tag forzado (sin acción ni pose sexual en texto):', chica, '→', tagSafe);
     return { tag: tagSafe, razon: 'sin_accion_en_mensaje_usuario', fuente: 'local_multi' };
   }
   const msgLower = msg.toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -1543,12 +1567,14 @@ Debés elegir UN solo tag de esa lista que mejor represente la escena.
 
 Reglas estrictas (prioridad de arriba hacia abajo):
 1) CONTINUIDAD DE CORRIDA: Solo si el USUARIO se corre y la ACCIÓN ANTERIOR es de ESTA misma chica. Si el mensaje dice que OTRO (ej. Aldo) se corre en otra chica, IGNORÁ la acción anterior y elegí según el mensaje actual.
-2) Si esta chica NO está involucrada en el acto del mensaje (solo mira / se pone celosa), elegí tag de reacción o "hablando", NO tags de recibir semen / oral / facial.
+2) Si el mensaje del usuario no la involucra PERO su RESPUESTA describe que sigue en un acto (Aldo la folla doggy, etc.), elegí el tag de ESA pose. Solo usá "hablando"/celos si su cuerpo NO está en un acto sexual en el texto.
 3) Si el usuario menciona explícitamente otra zona (assjob, nalgas, tetas, boca, cara, etc.) sobre ESTA chica, ahí sí cambiá.
 4) BOLAS: Si la escena es chupar/lamer bolas, el tag DEBE indicar lado: izquierda, derecha o ambas (chupando_bola_izquierda / chupando_bola_derecha / chupando_bolas). No uses un tag genérico de oral si hay tags de bola con lado.
 5) SOLO podés elegir un tag que esté en la lista. No inventes tags.
 6) Prestá atención a la zona del cuerpo y a QUIÉN recibe la acción.
 7) MULTI: el "mensaje del usuario" que recibís puede estar REORTADO a ESTA chica. Elegí SOLO la acción de ${chica}. PROHIBIDO copiar doggy/oral/etc. de otra hermana si no le corresponde a ella.
+7b) Si la RESPUESTA DE LA CHICA describe que ELLA sigue siendo penetrada / en doggy / misionero / oral (aunque el usuario hable de otra), elegí el tag de ESA pose. PROHIBIDO "hablando" solo porque también habla o tiene celos.
+7c) "hablando" solo si NO hay acto sexual en curso en su cuerpo en este turno.
 8) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
 9) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
 
@@ -1617,6 +1643,19 @@ Respondé solo el tag:`;
     }
 
     tag = normalizarTag(chica, tag, soloNoSex);
+
+    // Si Qwen puso "hablando" pero el texto describe sexo en curso → corregir a la pose
+    if (!soloNoSex && /hablando|enojada|sonrojada|celos/i.test(String(tag || ''))) {
+      const poseFix = detectarPoseSexualEnTexto(textoBot);
+      if (poseFix) {
+        const claves = [poseFix, 'doggystyle', 'doggy', 'misionero', 'cowgirl', 'follando'];
+        const alt = buscarTagEnPack(chica, claves, false) || normalizarTag(chica, poseFix, false);
+        if (alt && !/hablando/i.test(alt)) {
+          log('Tag corregido hablando→pose:', tag, '→', alt);
+          tag = alt;
+        }
+      }
+    }
 
     // Segunda corrección: solo si continuidad aplica a ESTA chica
     if (soloCorriendose && accionParaContinuar && continuidadOk) {
