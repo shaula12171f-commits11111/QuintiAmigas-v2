@@ -726,10 +726,66 @@ function esEscenaSex() {
   return PATRON_SEXO.test(ultimos);
 }
 
+
+/** Distancia de edición (typos: ichiak → ichika). */
+function distanciaLevenshtein(a, b) {
+  const s = String(a || '');
+  const t = String(b || '');
+  const m = s.length;
+  const n = t.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      const cost = s[i - 1] === t[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[m][n];
+}
+
+/** ¿Token se parece a un nombre de personaje? (typos de 1–2 letras). */
+function tokenPareceNombre(token, nombreCanonico) {
+  const t = String(token || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const n = String(nombreCanonico || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!t || !n || t.length < 3) return false;
+  if (t === n || t.includes(n) || n.includes(t)) return true;
+  if (Math.abs(t.length - n.length) > 2) return false;
+  const maxDist = n.length <= 4 ? 1 : 2;
+  return distanciaLevenshtein(t, n) <= maxDist;
+}
+
+/** Corrige typos de nombres en el mensaje del usuario (ichiak→Ichika). */
+function corregirTyposNombresEnMensaje(mensaje) {
+  const raw = String(mensaje || '');
+  if (!raw.trim()) return raw;
+  const nombres = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia', 'Aldo'];
+  return raw.replace(/[A-Za-zÁÉÍÓÚáéíóúñÑ]{3,}/g, (tok) => {
+    for (const nom of nombres) {
+      if (tokenPareceNombre(tok, nom) && tok.toLowerCase() !== nom.toLowerCase()) {
+        // preservar capitalización aproximada
+        log('Typo nombre corregido:', tok, '→', nom);
+        return nom;
+      }
+    }
+    return tok;
+  });
+}
+
 function detectarPersonajesEnContexto(textoUsuario) {
-  const t = (textoUsuario || '').toLowerCase();
+  const t = (textoUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   const found = new Set(estado.chicasActivas);
-  for (const n of TODOS) { if (t.includes(n.toLowerCase())) found.add(n); }
+  const tokens = t.split(/[^a-z0-9áéíóúñ]+/i).filter(Boolean);
+  for (const n of TODOS) {
+    const nl = n.toLowerCase();
+    if (t.includes(nl)) { found.add(n); continue; }
+    for (const tok of tokens) {
+      if (tokenPareceNombre(tok, n)) { found.add(n); break; }
+    }
+  }
   if (/hermanas?|las cinco|todas las|las quintillizas/i.test(t)) {
     for (const n of TODAS_CHICAS) found.add(n);
   }
@@ -825,7 +881,8 @@ function construirContexto(mensajeUsuarioActual = '') {
   const lineas = [
     `Fase: ${estado.fase}`,
     `Relacion actual: ${estado.relacion}`,
-    'Usuario = HOMBRE (pija). Las chicas = MUJERES.',
+    'Usuario = HOMBRE (pija y bolas). Las chicas = MUJERES (sin pija ni testículos).',
+    'GÉNERO: PROHIBIDO que la chica hable como si tuviera pija o testículos. Las bolas/pija son del usuario.',
     `Chica principal: ${estado.chica}`,
     `Presentes: ${estado.chicasActivas.join(', ')}`
   ];
@@ -863,7 +920,10 @@ function construirContexto(mensajeUsuarioActual = '') {
       lineas.push('IMPORTANTE: Está DESNUDA. No digas que lleva tanga, bikini, vestido ni ropa. No inventes prendas.');
     }
   }
-  if (estado.accionActual) lineas.push('Accion en curso: ' + estado.accionActual);
+  if (estado.accionActual) {
+    lineas.push('Acción/pose en curso (NO reinicies de cero): ' + estado.accionActual);
+    lineas.push('CONTINUIDAD: si el usuario pide otra acción, TRANSICIONÁ desde la actual (ej. lamiendo glande → "chupa bolas" = dejás el glande y pasás a las bolas).');
+  }
 
   // Emociones disponibles (info para la IA)
   const emos = listarEmociones(estado.chica);
@@ -1416,9 +1476,14 @@ Respondé solo el tag:`;
  * Solo se llama si hay 2+ personajes o el mensaje nombra varias chicas / aldo+chica.
  */
 function detectarChicasEnTexto(texto) {
-  const t = String(texto || '').toLowerCase();
+  const t = String(texto || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   const todas = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'];
-  return todas.filter((c) => t.includes(c.toLowerCase()));
+  const tokens = t.split(/[^a-z0-9áéíóúñ]+/i).filter(Boolean);
+  return todas.filter((c) => {
+    const cl = c.toLowerCase();
+    if (t.includes(cl)) return true;
+    return tokens.some((tok) => tokenPareceNombre(tok, c));
+  });
 }
 
 function clasificarTamanoEscena(nChicas) {
@@ -1895,6 +1960,8 @@ export async function enviarMensaje(mensajeUsuario) {
   if (!estado.chica) throw new Error('Selecciona una chica primero');
   try { await ensureImagenesLoaded(); } catch (_) {}
 
+  // Corregir typos de nombres (ichiak→Ichika) antes de todo
+  mensajeUsuario = corregirTyposNombresEnMensaje(mensajeUsuario);
   estado.ultimoMensajeUsuario = mensajeUsuario;
 
   // Nº de mensaje del usuario en esta partida (la bienvenida no cuenta)
@@ -1922,6 +1989,12 @@ export async function enviarMensaje(mensajeUsuario) {
   // Lore deshabilitado temporalmente (standby) — ver README.
   const personalidad = getPersonalidad(estado.chica, estado.nombreUsuario);
   let system = armarSystemPrompt(personalidad, estado.nombreUsuario, construirContexto(mensajeUsuario), [], '', []);
+  system += '\n\n## RECORDATORIO GÉNERO (este turno)\n';
+  system += 'Usuario=HOMBRE (pija y bolas). Chica=MUJER. PROHIBIDO que ella diga "mi pija", "mis testículos", "me muevas la pija" o "me aprietes los testículos" como si fueran de ella. ';
+  system += 'Si habla de pija/bolas, son LAS DEL USUARIO (te chupo la pija, tus bolas, etc.).\n';
+  if (estado.accionActual) {
+    system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
+  }
   // Evento de historia EN ESTE TURNO: dos bloques de la chica + mensaje ajeno en el medio
   if (eventoHistoria && eventoHistoria.texto) {
     const de = eventoHistoria.de || 'Alguien';
