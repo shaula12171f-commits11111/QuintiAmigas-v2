@@ -1684,10 +1684,33 @@ function resolverIntencionUsuario(mensaje) {
 
 function buscarTagEnPack(chica, claves, soloNoSex) {
   const tags = soloNoSex ? listarTagsNoSex(chica) : listarTags(chica);
+  if (!tags.length || !claves?.length) return null;
+  const claveJoin = claves.map((c) => String(c).toLowerCase()).join(' ');
+  const permiteMeta = /porno|grabar|filmar|camara|c[aá]mara|video|tape/.test(claveJoin);
+  const scored = [];
   for (const c of claves) {
-    const hit = tags.find((k) => k.toLowerCase().includes(String(c).toLowerCase()));
-    if (hit) return hit;
+    const cl = String(c || '').toLowerCase();
+    if (!cl) continue;
+    for (const k of tags) {
+      const kl = String(k).toLowerCase();
+      let score = 0;
+      if (kl === cl) score = 100;
+      else if (kl.startsWith(cl + '_') || kl.endsWith('_' + cl)) score = 85;
+      else if (kl.includes(cl)) score = Math.max(15, 55 - Math.floor(kl.length / 4));
+      else continue;
+      // Penalizar tags meta (porno/cámara) si el contexto no lo pide
+      if (!permiteMeta && /grabando|porno|c[aá]mara|camera|film|tape|video_sex|sex_tape/.test(kl)) {
+        score -= 60;
+      }
+      // Preferir doggystyle/misionero limpios sobre compuestos raros
+      if (/^(doggystyle|doggy|misionero|cowgirl|standfuck|chupando_todo_el_pene|follando)$/i.test(kl)) {
+        score += 10;
+      }
+      scored.push({ k, score });
+    }
   }
+  scored.sort((a, b) => b.score - a.score);
+  if (scored.length && scored[0].score >= 20) return scored[0].k;
   return null;
 }
 
@@ -1810,15 +1833,41 @@ function detectarPoseSexualEnTexto(texto) {
 function resolverTagContinuidadChica(chica, textoBot, soloNoSex) {
   if (soloNoSex) return null;
   const pose = detectarPoseSexualEnTexto(textoBot);
-  const prev = (estado.accionPorChica && estado.accionPorChica[chica]) || null;
+  let prev = (estado.accionPorChica && estado.accionPorChica[chica]) || null;
+  // Si el tag previo es meta (porno) y el texto no habla de grabar, ignorarlo
+  if (prev && /grabando|porno|c[aá]mara|film/i.test(prev) && !/grabar|porno|c[aá]mara|film/i.test(String(textoBot || ''))) {
+    prev = null;
+  }
+  // Prioridad: pose clara del texto → tag previo limpio → aliases
   const claves = [];
-  if (pose) claves.push(pose, 'doggystyle', 'doggy', 'misionero', 'cowgirl', 'follando', 'chupando', 'chupando_todo_el_pene');
-  if (prev && !/hablando|enojada|sonrojada/i.test(prev)) claves.unshift(prev);
-  if (!claves.length) return null;
-  let tag = buscarTagEnPack(chica, claves, false);
-  if (!tag && pose) tag = normalizarTag(chica, pose, false);
-  if (!tag && prev) tag = normalizarTag(chica, prev, false);
+  if (pose === 'doggy') claves.push('doggystyle', 'doggy', prev || '');
+  else if (pose === 'misionero') claves.push('misionero', prev || '');
+  else if (pose === 'cowgirl') claves.push('cowgirl', 'vaquera', prev || '');
+  else if (pose === 'chupando') claves.push('chupando_todo_el_pene', 'chupando', 'oral', prev || '');
+  else if (pose) claves.push(pose, 'doggystyle', 'misionero', prev || '');
+  if (prev && !/hablando|enojada|sonrojada|grabando|porno/i.test(prev)) {
+    claves.unshift(prev);
+  }
+  // Desde hechos: "Nino en doggy con Aldo"
+  const hechos = estado.hechos || [];
+  for (let i = hechos.length - 1; i >= 0; i--) {
+    const h = String(hechos[i]);
+    if (!new RegExp(chica, 'i').test(h)) continue;
+    if (/doggy/i.test(h)) { claves.unshift('doggystyle', 'doggy'); break; }
+    if (/misionero/i.test(h)) { claves.unshift('misionero'); break; }
+    if (/oral/i.test(h)) { claves.unshift('chupando_todo_el_pene', 'chupando'); break; }
+  }
+  const limpio = claves.filter(Boolean);
+  if (!limpio.length) return null;
+  let tag = buscarTagEnPack(chica, limpio, false);
+  if (tag && /grabando|porno/i.test(tag) && !/grabar|porno/i.test(String(textoBot || ''))) {
+    tag = buscarTagEnPack(chica, limpio.filter((c) => !/porno|grabar/i.test(c)).concat(['doggystyle', 'doggy', 'misionero', 'follando']), false);
+  }
+  if (!tag && pose === 'doggy') tag = normalizarTag(chica, 'doggystyle', false) || normalizarTag(chica, 'doggy', false);
+  if (!tag && pose === 'misionero') tag = normalizarTag(chica, 'misionero', false);
+  if (!tag && prev && !/grabando|porno|hablando/i.test(prev)) tag = normalizarTag(chica, prev, false);
   if (tag && /hablando/i.test(tag)) return null;
+  if (tag && /grabando|porno/i.test(tag) && !/grabar|porno/i.test(String(textoBot || ''))) return null;
   return tag || null;
 }
 
@@ -2111,10 +2160,14 @@ function accionesClaveMensaje(msg) {
   return keys;
 }
 
+function chicasEnTagNombre(tag) {
+  const tl = String(tag || '').toLowerCase();
+  return ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'].filter((n) => tl.includes(n));
+}
+
 function tagCubreAcciones(tag, accionesMsg) {
   const tl = String(tag || '').toLowerCase();
   if (!accionesMsg.length) return true;
-  // Cada acción del mensaje debería reflejarse en el tag (o al menos no contradecir)
   const mapa = {
     standfuck: [/stand/, /de_pie/, /pared/],
     doggy: [/doggy/, /doggystyle/, /cuatro/],
@@ -2130,18 +2183,25 @@ function tagCubreAcciones(tag, accionesMsg) {
     const pats = mapa[a] || [];
     if (pats.some((p) => p.test(tl))) cubiertas++;
   }
-  // Contradicciones fuertes: mensaje pide standfuck y tag es solo doggy sin stand
   if (accionesMsg.includes('standfuck') && /doggy/.test(tl) && !/stand/.test(tl)) return false;
   if (accionesMsg.includes('doggy') && /stand/.test(tl) && !/doggy/.test(tl)) return false;
-  if (accionesMsg.includes('anal') && !/anal|culo/.test(tl) && accionesMsg.length >= 2) {
-    // si hay anal en el mensaje y el tag no lo menciona, no es match de escena completa
-    return false;
-  }
-  // Debe cubrir al menos la mayoría de acciones distintas del mensaje
-  return cubiertas >= Math.ceil(accionesMsg.length * 0.7);
+  if (accionesMsg.includes('anal') && !/anal|culo/.test(tl) && accionesMsg.length >= 2) return false;
+  // Si el mensaje NO pide dedos, un tag de "dedos en concha" no sirve
+  if (!accionesMsg.includes('dedos') && /dedo|finger/.test(tl) && accionesMsg.length <= 2) return false;
+  // Si el mensaje NO pide oral, no usar tag de mamada como escena completa
+  if (!accionesMsg.includes('oral') && /mamada|chup|blow|oral/.test(tl) && accionesMsg.includes('doggy') && !/doggy/.test(tl)) return false;
+  return cubiertas >= Math.ceil(accionesMsg.length * 0.85);
 }
 
-/** Match local: tag que contenga los nombres + las MISMAS acciones (no reusar trío viejo). */
+/** Parejas cruzadas (Aldo↔X, usuario↔Y): casi nunca hay imagen grupal genérica válida. */
+function esParejasCruzadasOParalelas(mensajeUsuario) {
+  const t = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const aldo = /\baldo\b/.test(t) && /\b(foll|doggy|mision|penetr|cog)/.test(t);
+  const yo = /\b(yo\s+follo|follo\s+a|a\s+mi\s+novia|ami\s+novia)\b/.test(t);
+  return aldo && yo;
+}
+
+/** Match local estricto: mismos nombres (sin chicas de más), mismas acciones. */
 function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
   if (!disponibles.length || chicas.length < 2) return null;
   const msg = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -2149,67 +2209,65 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
   const names = chicas.map((c) => c.toLowerCase());
   const accionesMsg = accionesClaveMensaje(mensajeUsuario);
 
-  // 0) Match casi exacto por slug
+  // Parejas cruzadas: solo match si el tag describe explícitamente esa estructura; si no, null
+  if (esParejasCruzadasOParalelas(mensajeUsuario)) {
+    log('Match LOCAL: escena parejas cruzadas — no forzar trío/grupal genérico');
+    // Solo aceptar tags que mencionen aldo o "intercambio" y las mismas chicas sin extras
+  }
+
+  const candidatosOk = (e) => {
+    if (!e.url) return false;
+    const tl = e.tag.toLowerCase();
+    const enTag = chicasEnTagNombre(tl);
+    // PROHIBIDO: el tag nombra a una chica que NO está en la escena actual
+    if (enTag.some((n) => !names.includes(n))) return false;
+    // Debe cubrir al menos a todas las chicas de la escena (duo/trío real)
+    if (names.some((n) => !tl.includes(n))) return false;
+    if (!tagCubreAcciones(tl, accionesMsg)) return false;
+    // Tag con "dedos" solo si el mensaje habla de dedos
+    if (/dedo|finger/.test(tl) && !/dedo|concha|finger/.test(msg)) return false;
+    // Parejas cruzadas: evitar tags tipo "mientras meto dedos a miku y ichika"
+    if (esParejasCruzadasOParalelas(mensajeUsuario) && /mientras|dedo|miku/.test(tl) && !/aldo/.test(tl)) {
+      return false;
+    }
+    return true;
+  };
+
+  // 0) Match slug casi exacto
   for (const e of disponibles) {
-    if (!e.url) continue;
+    if (!candidatosOk(e)) continue;
     const tl = e.tag.toLowerCase();
-    if (slugMsg === tl || slugMsg.includes(tl) || tl.includes(slugMsg)) {
-      if (tagCubreAcciones(tl, accionesMsg)) {
-        log('Match LOCAL exacto/slug:', e.tag);
-        return e;
-      }
-    }
-    const tokTag = new Set(tl.split('_').filter((t) => t.length > 2));
-    const tokMsg = new Set(slugMsg.split('_').filter((t) => t.length > 2));
-    let inter = 0;
-    for (const t of tokTag) if (tokMsg.has(t)) inter++;
-    const ratio = tokTag.size ? inter / tokTag.size : 0;
-    if (ratio >= 0.75 && names.filter((n) => tl.includes(n)).length >= Math.min(2, names.length)) {
-      if (tagCubreAcciones(tl, accionesMsg)) {
-        log('Match LOCAL por tokens:', e.tag, 'ratio=', ratio.toFixed(2));
-        return e;
-      }
-      log('Match LOCAL descartado (acciones no cubren):', e.tag, 'msgAcciones=', accionesMsg.join(','));
+    if (slugMsg === tl || (slugMsg.length > 12 && (slugMsg.includes(tl) || tl.includes(slugMsg)))) {
+      log('Match LOCAL exacto/slug:', e.tag);
+      return e;
     }
   }
 
-  // 1) Candidatos con todos los nombres
-  let candidatos = disponibles.filter((e) => {
-    const tl = e.tag.toLowerCase();
-    return e.url && names.every((n) => tl.includes(n));
-  });
-  if (!candidatos.length) {
-    candidatos = disponibles.filter((e) => {
-      const tl = e.tag.toLowerCase();
-      return e.url && names.filter((n) => tl.includes(n)).length >= 2;
-    });
-  }
-  // Filtrar por acciones
-  candidatos = candidatos.filter((e) => tagCubreAcciones(e.tag, accionesMsg));
-  if (!candidatos.length) {
-    log('Match LOCAL: sin candidato que cubra acciones', accionesMsg.join(','));
-    return null;
-  }
-
+  // 1) Score estricto
   let best = null;
   let bestScore = -1;
-  for (const e of candidatos) {
+  for (const e of disponibles) {
+    if (!candidatosOk(e)) continue;
     const tl = e.tag.toLowerCase();
-    let score = names.filter((n) => tl.includes(n)).length * 10;
+    let score = names.length * 15;
     for (const a of accionesMsg) {
-      if (tl.includes(a) || (a === 'dedos' && /dedo|concha/.test(tl)) || (a === 'doggy' && /doggy/.test(tl))) score += 8;
+      if (tl.includes(a) || (a === 'doggy' && /doggy/.test(tl)) || (a === 'dedos' && /dedo/.test(tl))) score += 12;
     }
-    if (names.length === 3 && names.every((n) => tl.includes(n))) score += 5;
+    // Penalizar tags mucho más largos/complejos que el mensaje (trío viejo)
+    const extra = chicasEnTagNombre(tl).length - names.length;
+    if (extra > 0) score -= 40;
+    if (/mientras/.test(tl) && !/mientras/.test(msg)) score -= 15;
     if (score > bestScore) {
       bestScore = score;
       best = e;
     }
   }
-  if (best && bestScore >= 25) {
+  // Umbral alto: mejor individuales que imagen incorrecta
+  if (best && bestScore >= 40) {
     log('Match LOCAL escena compartida:', best.tag, 'score=', bestScore, 'acciones=', accionesMsg.join(','));
     return best;
   }
-  log('Match LOCAL: score bajo, no forzar grupal', bestScore);
+  log('Match LOCAL: sin candidato estricto (score=' + bestScore + ')', 'acciones=', accionesMsg.join(','));
   return null;
 }
 
@@ -2849,14 +2907,20 @@ export async function enviarMensaje(mensajeUsuario) {
       textoFinal = await rearmarTextoSegunTag(b.chica, b.texto, media.tag || tagFinal, mensajeUsuario);
     } catch (_) {}
 
-    // Guardar pose por chica para continuidad en multi
-    if (media.tag && !/hablando|enojada|sonrojada|celos/i.test(media.tag) && typeof esTagSex === 'function' && esTagSex(media.tag)) {
-      if (!estado.accionPorChica) estado.accionPorChica = {};
-      estado.accionPorChica[b.chica] = media.tag;
-    } else if (media.tag && detectarPoseSexualEnTexto(b.texto)) {
-      if (!estado.accionPorChica) estado.accionPorChica = {};
-      const cont = resolverTagContinuidadChica(b.chica, b.texto, false);
-      if (cont) estado.accionPorChica[b.chica] = cont;
+    // Guardar pose por chica (nunca tags meta porno/cámara salvo que el mensaje lo pida)
+    if (media.tag && !/hablando|enojada|sonrojada|celos/i.test(media.tag)) {
+      const meta = /grabando|porno|c[aá]mara|film/i.test(media.tag);
+      const pideMeta = /grabar|porno|c[aá]mara|film|video/i.test(String(mensajeUsuario || ''));
+      if (!meta || pideMeta) {
+        if (typeof esTagSex === 'function' && esTagSex(media.tag)) {
+          if (!estado.accionPorChica) estado.accionPorChica = {};
+          estado.accionPorChica[b.chica] = media.tag;
+        } else if (detectarPoseSexualEnTexto(b.texto)) {
+          if (!estado.accionPorChica) estado.accionPorChica = {};
+          const cont = resolverTagContinuidadChica(b.chica, b.texto, false);
+          if (cont && !/grabando|porno/i.test(cont)) estado.accionPorChica[b.chica] = cont;
+        }
+      }
     }
 
     partes.push({
