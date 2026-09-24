@@ -2731,14 +2731,14 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.accionActual) {
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
-  system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
-  system += 'Escribí en PROSA NARRATIVA densa: mínimo 2–4 párrafos por personaje activo; más si el usuario da libertad, cambia de día/lugar o pide que continúes. ';
-  system += 'Incluí lugar, luz, ropa/cuerpo, gestos, silencios, miradas y diálogo natural. Suena a ficción erótica bien escrita, no a chat corto. ';
-  system += 'Si el usuario avanza el tiempo (mañana, oficina, fiesta, una semana), narrá el salto de escena con claridad. ';
-  system += 'NPCs con voz propia. PROHIBIDO respuestas de 1–2 líneas en turnos de escena.\n';
+  system += '\n## ESTILO (REACCIONAR, NO NARRAR)\n';
+  system += 'PROHIBIDO prosa de novela. PROHIBIDO frases con: sintiendo, dejando que, dejando claro que, ofreciendo, permitiendo que, vibración que recorre, calor de su erección contra mi piel, postura que deja poco a la imaginación.\n';
+  system += 'Cada personaje: (1) acción física concreta y visible, (2) AL MENOS una frase de diálogo entre comillas o con rayas. PROHIBIDO un bloque que solo narre sin hablar.\n';
+  system += 'Primera persona de la chica del bloque (yo/me/mi), no narrar a otra en tercera como si fuera ella. Cada una describe SOLO su cuerpo y su pose.\n';
+  system += 'Si el usuario avanza el tiempo (mañana, oficina), cambiá de escena con claridad pero sin poesía.\n';
   system += '\n## MEMORIA Y ARCO\n';
   system += 'Usá el MAPA DE ESCENA (PRESENTES, ACCIONES, HECHOS, CORRIDAS, RELACIONES). No inventes corridas ni contradigas HECHOS_FIJOS. ';
-  system += 'Si hubo celular/foto, reaccioná pero no borres el acto o charla en curso. Recordá quién es novia de quién y con quién está cada una.\n';
+  system += 'Recordá quién hace qué con quién. Si el usuario se corre en X y Aldo en Y, no mezcles destinos.\n';
   // Evento de historia EN ESTE TURNO: dos bloques de la chica + mensaje ajeno en el medio
   if (eventoHistoria && eventoHistoria.texto) {
     const de = eventoHistoria.de || 'Alguien';
@@ -2764,11 +2764,13 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.chicasActivas.length > 1) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
-    system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes (TODOS deben hablar): ${estado.chicasActivas.join(', ')}.`;
-    system += `\nOBLIGATORIO: un bloque [Nombre]: por CADA presente. Nadie desaparece del turno aunque el usuario no la nombre en el acto.`;
-    system += `\nSi el usuario solo actúa con algunas, las otras REACCIONAN (celos, mirar, comentar, tocarse, pedir turno). No las omitas.`;
-    system += `\nREGLA DE ROBO DE ESCENA: solo las nombradas en el acto describen la penetración/pose. Las demás no se inventan el mismo acto.`;
-    system += `\nEjemplo: usuario "standfuck a Nino y Miku" con Ichika presente → [Nino]: standfuck... [Miku]: standfuck... [Ichika]: *mira con celos/interés* reacciona sin desaparecer.`;
+    system += `\n\n⚠️ MULTI ACTIVO. Presentes (TODOS con bloque): ${estado.chicasActivas.join(', ')}.`;
+    system += `\nOBLIGATORIO: un bloque [Nombre]: por CADA presente.`;
+    system += `\nCADA bloque DEBE incluir diálogo hablado (al menos una frase entre comillas). PROHIBIDO bloques que solo narren sin hablar.`;
+    system += `\nCada [Nombre] habla en PRIMERA persona de ESA persona. Describe SOLO su cuerpo y su pose. PROHIBIDO que Nino narre lo que hace Aldo en tercera como si fuera escena de libro.`;
+    system += `\nSi el usuario asigna poses distintas (ej. Aldo-misionero-Nino, usuario-doggy-Miku), cada bloque respeta SU pose. No mezclar.`;
+    system += `\nSi el usuario solo actúa con algunas, las otras REACCIONAN con diálogo (celos, comentario). No las omitas.`;
+    system += `\nCorridas: respetá exactamente en quién y dónde dijo el usuario (espalda de Miku ≠ cara de Nino).`;
   }
 
   const intencion = resolverIntencionUsuario(mensajeUsuario);
