@@ -2746,11 +2746,12 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.accionActual) {
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
-  system += '\n## ESTILO (REACCIONAR, NO NARRAR)\n';
-  system += 'PROHIBIDO prosa de novela. PROHIBIDO frases con: sintiendo, dejando que, dejando claro que, ofreciendo, permitiendo que, vibración que recorre, calor de su erección contra mi piel, postura que deja poco a la imaginación.\n';
-  system += 'Cada personaje: (1) acción física concreta y visible, (2) AL MENOS una frase de diálogo entre comillas o con rayas. PROHIBIDO un bloque que solo narre sin hablar.\n';
-  system += 'Primera persona de la chica del bloque (yo/me/mi), no narrar a otra en tercera como si fuera ella. Cada una describe SOLO su cuerpo y su pose.\n';
-  system += 'Si el usuario avanza el tiempo (mañana, oficina), cambiá de escena con claridad pero sin poesía.\n';
+  system += '\n## ESTILO (DIÁLOGO PRIMERO)\n';
+  system += 'PRIORIDAD: que HABLEN. Narración mínima.\n';
+  system += 'Cada personaje: mínimo 2-3 frases de diálogo hablado. Máximo 2-3 oraciones cortas de acción. PROHIBIDO bloques 90% narración.\n';
+  system += 'PROHIBIDO: sintiendo, dejando que, ofreciendo, hundiendo su cadera, obligándome a arquear, contraste de tu amigo, prosa de novela.\n';
+  system += 'Estructura: *acción corta* + diálogo + *acción corta* + diálogo.\n';
+  system += 'Primera persona del bloque. Solo tu cuerpo y tu pose. No narres al otro en tercera dentro de tu bloque.\n';
   system += '\n## MEMORIA Y ARCO\n';
   system += 'Usá el MAPA DE ESCENA (PRESENTES, ACCIONES, HECHOS, CORRIDAS, RELACIONES). No inventes corridas ni contradigas HECHOS_FIJOS. ';
   system += 'Recordá quién hace qué con quién. Si el usuario se corre en X y Aldo en Y, no mezcles destinos.\n';
@@ -2781,7 +2782,7 @@ export async function enviarMensaje(mensajeUsuario) {
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
     system += `\n\n⚠️ MULTI ACTIVO. Presentes (TODOS con bloque): ${estado.chicasActivas.join(', ')}.`;
     system += `\nOBLIGATORIO: un bloque [Nombre]: por CADA presente.`;
-    system += `\nCADA bloque DEBE incluir diálogo hablado (al menos una frase entre comillas). PROHIBIDO bloques que solo narren sin hablar.`;
+    system += `\nCADA bloque: mínimo 2-3 frases de diálogo hablado; narración corta. PROHIBIDO bloques que solo narren sin hablar.`;
     system += `\nCada [Nombre] habla en PRIMERA persona de ESA persona. Describe SOLO su cuerpo y su pose. PROHIBIDO que Nino narre lo que hace Aldo en tercera como si fuera escena de libro.`;
     system += `\nSi el usuario asigna poses distintas (ej. Aldo-misionero-Nino, usuario-doggy-Miku), cada bloque respeta SU pose. No mezclar.`;
     system += `\nSi el usuario solo actúa con algunas, las otras REACCIONAN con diálogo (celos, comentario). No las omitas.`;
