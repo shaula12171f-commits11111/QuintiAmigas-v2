@@ -1630,24 +1630,38 @@ function postProcesarFase(respuestaTexto) {
 }
 
 function partirBloquesMulti(texto, chicaDefault) {
-  const re = /\[\s*(Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia|Aldo)\s*\]\s*:/gi;
-  const indices = []; let m;
+  // Detecta [Nino]:, Nino:, **Nino:** en cualquier parte del texto
+  const re = /(?:\[\s*)?(Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia|Aldo)(?:\s*\])?\s*:/gi;
+  const indices = [];
+  let m;
   while ((m = re.exec(texto)) !== null) {
     const fixed = TODOS.find((x) => x.toLowerCase() === m[1].toLowerCase()) || m[1];
+    // Evitar falsos positivos tipo "hora:" — el nombre debe ser exacto (ya lo es por el grupo)
     indices.push({ nombre: fixed, index: m.index, len: m[0].length });
   }
-  if (!indices.length) return [{ chica: chicaDefault, texto: texto.trim() }];
-  const bloques = [];
-  for (let i = 0; i < indices.length; i++) {
-    const start = indices[i].index + indices[i].len;
-    const end = i + 1 < indices.length ? indices[i + 1].index : texto.length;
-    const body = texto.slice(start, end).trim();
-    if (body) bloques.push({ chica: indices[i].nombre, texto: body });
-  }
-  if (!bloques.length) return [{ chica: chicaDefault, texto: texto.trim() }];
+  if (!indices.length) return [{ chica: chicaDefault, texto: String(texto || '').trim() }];
 
-  // Si todos los bloques son de la MISMA chica (chat 1 a 1), unirlos en uno solo
-  // para que no salgan 3-4 burbujas separadas. En multi con distintas chicas se mantienen.
+  // Quitar solapes (mismo inicio)
+  indices.sort((a, b) => a.index - b.index);
+  const clean = [];
+  for (const it of indices) {
+    if (clean.length && it.index < clean[clean.length - 1].index + clean[clean.length - 1].len) continue;
+    clean.push(it);
+  }
+
+  const bloques = [];
+  for (let i = 0; i < clean.length; i++) {
+    const start = clean[i].index + clean[i].len;
+    const endPos = i + 1 < clean.length ? clean[i + 1].index : texto.length;
+    let body = texto.slice(start, endPos).trim();
+    // Si el cuerpo empieza con otro nombre residual, limpiar
+    body = body.replace(/^(?:\*\*)?\[\s*(?:Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia|Aldo)\s*\]\s*:\s*/i, '').trim();
+    if (body) bloques.push({ chica: clean[i].nombre, texto: body });
+  }
+  if (!bloques.length) return [{ chica: chicaDefault, texto: String(texto || '').trim() }];
+
+  // 1-a-1: varios bloques de la MISMA chica → un solo mensaje
+  // Multi: personajes distintos → un mensaje por personaje
   const nombresUnicos = [...new Set(bloques.map((b) => b.chica))];
   if (nombresUnicos.length === 1) {
     return [{
@@ -1657,6 +1671,7 @@ function partirBloquesMulti(texto, chicaDefault) {
   }
   return bloques;
 }
+
 
 function normUser(msg) {
   let t = String(msg || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
