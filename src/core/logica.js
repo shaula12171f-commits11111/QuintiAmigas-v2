@@ -1,4 +1,4 @@
-// ============================================================
+/ ============================================================
 //  Motor principal - QuintiAmigas v2
 //  Tags: Qwen elige el tag principal (se usa de verdad)
 //  + IA tag + Nakardas pasan a TESTING only
@@ -1644,7 +1644,18 @@ function partirBloquesMulti(texto, chicaDefault) {
     const body = texto.slice(start, end).trim();
     if (body) bloques.push({ chica: indices[i].nombre, texto: body });
   }
-  return bloques.length ? bloques : [{ chica: chicaDefault, texto: texto.trim() }];
+  if (!bloques.length) return [{ chica: chicaDefault, texto: texto.trim() }];
+
+  // Si todos los bloques son de la MISMA chica (chat 1 a 1), unirlos en uno solo
+  // para que no salgan 3-4 burbujas separadas. En multi con distintas chicas se mantienen.
+  const nombresUnicos = [...new Set(bloques.map((b) => b.chica))];
+  if (nombresUnicos.length === 1) {
+    return [{
+      chica: nombresUnicos[0],
+      texto: bloques.map((b) => b.texto).join('\n\n').trim()
+    }];
+  }
+  return bloques;
 }
 
 function normUser(msg) {
