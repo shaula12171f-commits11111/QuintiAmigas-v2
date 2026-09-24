@@ -1,4 +1,4 @@
-/ ============================================================
+// ============================================================
 //  Motor principal - QuintiAmigas v2
 //  Tags: Qwen elige el tag principal (se usa de verdad)
 //  + IA tag + Nakardas pasan a TESTING only
