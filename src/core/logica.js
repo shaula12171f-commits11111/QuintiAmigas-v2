@@ -550,20 +550,15 @@ function actualizarRopaDesdeMensajeUsuario(msg, chica) {
 function mensajePreguntaInventarioRopa(mensaje) {
   const m = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   if (!m.trim()) return null;
-  const preguntaCosplay = /\b(cosplay|disfraz|uniforme|colegiala)\b/.test(m)
-    && /\b(que|qué|cual|cuál|tienen|tenes|tenés|tiene|hay|mostr|lista|ponen|ponete|visten)\b/.test(m)
-    || /\b(que|qué)\s+cosplay/.test(m)
-    || /\bcosplays?\s+(tienen|tenes|hay)\b/.test(m)
-    || /\b(que|qué)\s+disfraz/.test(m);
-  const preguntaRopa = /\b(ropa|outfit|atuendo|vestimenta|traje|look)\b/.test(m)
-    && /\b(que|qué|cual|cuál|tienen|tenes|tenés|lleva|pones|hay)\b/.test(m)
-    || /\b(que|qué)\s+ropa/.test(m)
-    || /\bcon\s+que\s+ropa\b/.test(m);
-  if (preguntaCosplay && preguntaRopa) return 'ambos';
-  if (preguntaCosplay) return 'cosplay';
-  if (preguntaRopa) return 'ropa';
-  // "chicas que cosplays tienen" / listado
-  if (/\bcosplay/.test(m) && /\b(tienen|tenes|lista|disponib)\b/.test(m)) return 'cosplay';
+  // typos frecuentes: qeu, ke, k, tines
+  const pregunta = /\b(que|qeu|ke|k|cual|cuales|tienen|tenes|tene|tiene|tienes|hay|lista|mostr|visten|pones|ponen)\b/.test(m)
+    || /\?/.test(m);
+  const hayCosplay = /\b(cosplay|cosplays|disfraz|disfraces|uniforme|colegiala)\b/.test(m);
+  const hayRopa = /\b(ropa|ropas|outfit|atuendo|vestimenta|traje|look|looks)\b/.test(m);
+  // "que cosplays o ropas tienes" / "nino que cosplay tienes"
+  if (hayCosplay && hayRopa && (pregunta || /tienes|tienen|tenes/.test(m))) return 'ambos';
+  if (hayCosplay && (pregunta || /tienes|tienen|tenes|hay/.test(m))) return 'cosplay';
+  if (hayRopa && (pregunta || /tienes|tienen|tenes|hay/.test(m))) return 'ropa';
   return null;
 }
 
@@ -621,28 +616,34 @@ function listarInventarioLooks(chica, tipo = 'ambos') {
 
 function textoInventarioLooksParaPrompt(chicas, tipo) {
   const lineas = [];
-  lineas.push('## INVENTARIO REAL DE LOOKS (solo NOMBRES de tags de imagenes.js; PROHIBIDO inventar)');
+  lineas.push('## INVENTARIO REAL DE LOOKS — OBLIGATORIO ESTE TURNO');
   lineas.push(`Consulta: ${tipo === 'cosplay' ? 'cosplay/disfraz' : tipo === 'ropa' ? 'ropa/outfit' : 'cosplay y ropa'}.`);
-  lineas.push('REGLAS DE DIÁLOGO: hablá en natural ("tengo el de idol", "el cosplay de gatita"). PROHIBIDO pegar nombres técnicos de tags (ej. nino_chupa_pene_ropa_idol) ni armar menús con **tag_name**.');
+  lineas.push('PROHIBIDO inventar cosplays/ropas que NO estén en la lista (Sailor Moon, samurái, etc. si no figuran).');
+  lineas.push('Hablá en natural. PROHIBIDO nombres técnicos de tags ni menús **tag**.');
+  let alguno = false;
   for (const ch of chicas) {
     if (!ch || ch === 'Aldo') continue;
     const inv = listarInventarioLooks(ch, tipo === 'ambos' ? 'ambos' : tipo);
     if (!inv.length) {
       if (tipo === 'cosplay') {
-        lineas.push(`- ${ch}: lista vacía → decir que NO tiene ningún cosplay cargado. PROHIBIDO inventar.`);
+        lineas.push(`- ${ch}: LISTA VACÍA. Debe decir con naturalidad que NO tiene ningún cosplay/disfraz cargado. CERO inventados.`);
       } else if (tipo === 'ropa') {
-        lineas.push(`- ${ch}: lista vacía → decir que NO tiene ropa de catálogo cargada. PROHIBIDO inventar.`);
+        lineas.push(`- ${ch}: LISTA VACÍA. Debe decir que NO tiene ropa de catálogo cargada. CERO inventados.`);
       } else {
-        lineas.push(`- ${ch}: vacío → no tiene. No inventar.`);
+        lineas.push(`- ${ch}: LISTA VACÍA. No tiene cosplay ni ropa de catálogo. Decirlo. CERO inventados.`);
       }
     } else {
-      lineas.push(`- ${ch} puede mencionar estos looks (${inv.length}):`);
+      alguno = true;
+      lineas.push(`- ${ch} SOLO puede mencionar estos (${inv.length}):`);
       for (const it of inv.slice(0, 20)) {
         lineas.push(`  · ${it.label}`);
       }
     }
   }
-  lineas.push('Solo lo de arriba. Si vacío, decir que no tiene.');
+  if (!alguno) {
+    lineas.push('NINGUNA chica tiene items en catálogo para esta consulta → todas deben decir que no tienen, sin inventar.');
+  }
+  lineas.push('Si el usuario pregunta qué tienen: respondé SOLO con la lista real o "no tengo".');
   return lineas.join('\n');
 }
 
@@ -2887,11 +2888,21 @@ export async function enviarMensaje(mensajeUsuario) {
   system += '\n## FORMATO DE BLOQUES\n';
   system += 'Máximo UN bloque [Nombre]: por personaje en este turno. PROHIBIDO repetir [Ichika]: varias veces; juntá todo en un solo bloque por chica.\n';
   // Inventario real cosplay/ropa si el usuario pregunta
-  const tipoInv = mensajePreguntaInventarioRopa(mensajeUsuario);
+  let tipoInv = mensajePreguntaInventarioRopa(mensajeUsuario);
+  let bloqueInventarioLooks = '';
   if (tipoInv) {
+    try {
+      if (typeof ensureImagenesLoaded === 'function') await ensureImagenesLoaded();
+    } catch (e) { log('ensureImagenesLoaded inventario:', e?.message || e); }
     const chicasInv = [...new Set([estado.chica, ...(estado.chicasActivas || [])].filter(Boolean))];
-    system += '\n\n' + textoInventarioLooksParaPrompt(chicasInv, tipoInv) + '\n';
-    log('Inventario looks inyectado:', tipoInv, 'chicas=', chicasInv.join(','));
+    // Si nombran una chica concreta en el mensaje, priorizarla
+    for (const c of ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']) {
+      if (String(mensajeUsuario || '').toLowerCase().includes(c.toLowerCase())) chicasInv.push(c);
+    }
+    const uniq = [...new Set(chicasInv.filter(Boolean))];
+    bloqueInventarioLooks = textoInventarioLooksParaPrompt(uniq, tipoInv);
+    system += '\n\n' + bloqueInventarioLooks + '\n';
+    log('Inventario looks inyectado:', tipoInv, 'chicas=', uniq.join(','));
   }
 
   if (estado.accionActual) {
@@ -2969,10 +2980,13 @@ export async function enviarMensaje(mensajeUsuario) {
   // System (resumen + estado) + últimos N mensajes completos + mensaje actual.
   // No se manda todo el historial: solo resumen + ventana reciente.
   const recientes = obtenerMensajesRecientesParaIA(ULTIMOS_MENSAJES_CONTEXTO);
+  const userContentTurno = bloqueInventarioLooks
+    ? (mensajeUsuario + '\n\n[SISTEMA — catálogo real; no inventes fuera de esto]\n' + bloqueInventarioLooks)
+    : mensajeUsuario;
   const messages = [
     { role: 'system', content: system },
     ...recientes,
-    { role: 'user', content: mensajeUsuario }
+    { role: 'user', content: userContentTurno }
   ];
   log('Contexto IA: resumen=' + ((estado.resumenConversacion || '').length) + ' chars, mensajes recientes=' + recientes.length);
   let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)', max_tokens: 2200, temperature: 1.05 });
@@ -2982,9 +2996,9 @@ export async function enviarMensaje(mensajeUsuario) {
       raw = await llamarGroq([
         { role: 'system', content: system + '\n\n' + extra },
         ...recientes,
-        { role: 'user', content: mensajeUsuario },
+        { role: 'user', content: userContentTurno },
         { role: 'assistant', content: raw || '' },
-        { role: 'user', content: 'Corrige SOLO JSON.' }
+        { role: 'user', content: 'Corrige SOLO JSON. No inventes cosplays/ropa fuera del inventario del sistema.' }
       ], { proposito: 'reintento-JSON (MODELO)' });
       parsed = parseJsonRespuesta(raw);
       if (parsed) break;
