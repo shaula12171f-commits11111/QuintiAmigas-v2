@@ -4,7 +4,18 @@ Cada entrada tiene fecha/hora y archivo de respaldo para poder volver atrás.
 
 ---
 
-## 2026-09-26 10:00:31 -0500 — Un mensaje por chica (fusionar bloques)
+## 2026-09-26 10:28:01 -0500 — Inventario real cosplay/ropa (imagenes.js)
+
+**Qué**
+- Si preguntan qué cosplay/ropa tienen, se inyecta la lista real de tags+descripciones de `imagenes.js`.
+- Si una chica no tiene ninguno: debe decir que **no tiene** (no inventar gatita/Sailor Moon).
+
+**Respaldo:** `respaldos/logica_20260926_102759.js`
+
+**Tipo:** datos reales del catálogo + instrucción IA. Mejora real de coherencia texto/imagen.
+
+
+## 2026-09-26 10:00:33 -0500 — Un mensaje por chica (fusionar bloques)
 
 **Qué**
 - Si la IA devuelve varios `[Ichika]:` en el mismo turno, se fusionan en **un solo** mensaje.
@@ -16,6 +27,7 @@ Cada entrada tiene fecha/hora y archivo de respaldo para poder volver atrás.
 **Respaldo:** `respaldos/logica_20260926_100031.js`
 
 **Tipo:** lógica necesaria de presentación + instrucción a la IA. Mejora real.
+
 
 ## 2026-09-26 09:22:29 -0500 — Estado de ropa cosplay (tag dinámico)
 
