@@ -17,6 +17,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  DUOS (2 chicas)
 // ---------------------------------------------------------------------------
 const DUOS = {
+  nino_miku_follo_a_nino_matting_press_mientras_miku_mira: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/nino_miku_follo_a_nino_matting_press_mientras_miku_mira.jpg',
+    descripcion: 'miku se masturba mientras mira',
+    audio: ''
+  },
+
   nino_miku_nino_me_monta_mientras_miku_mira_en_mi_habitacion: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/nino_miku_nino_me_monta_mientras_miku_mira_en_mi_habitacion.jpg',
     descripcion: 'nino_me_monta_mientras_miku_mira_en_mi_habitacion',
