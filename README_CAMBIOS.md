@@ -4,6 +4,19 @@ Cada entrada tiene fecha/hora y archivo de respaldo para poder volver atrás.
 
 ---
 
+## 2026-09-26 10:00:31 -0500 — Un mensaje por chica (fusionar bloques)
+
+**Qué**
+- Si la IA devuelve varios `[Ichika]:` en el mismo turno, se fusionan en **un solo** mensaje.
+- Prompt: máximo un bloque `[Nombre]:` por personaje por turno.
+
+**Por qué**
+- Un mensaje del usuario generaba 3 burbujas de la misma chica.
+
+**Respaldo:** `respaldos/logica_20260926_100031.js`
+
+**Tipo:** lógica necesaria de presentación + instrucción a la IA. Mejora real.
+
 ## 2026-09-26 09:22:29 -0500 — Estado de ropa cosplay (tag dinámico)
 
 **Qué**
