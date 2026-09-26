@@ -15,6 +15,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  ESCENAS (agregá solo con URL real)
 // ---------------------------------------------------------------------------
 const ESCENAS = {
+  nino_ichika_folladas_de_pie: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/parejas/nino_ichika_folladas_de_pie.jpg',
+    descripcion: 'tienen camisas blancas y faldas verdes folladas al lado practicamente sus culos chocando entre si muy pegadas',
+    audio: ''
+  },
+
   nino_ichika_follando_en_el_aire: {
     url: 'https://raw.githubusercontent.com/SORFAR123123/Putas-de-fabri/main/imagenes/img_1772900802371.jpg',
     descripcion: 'Nino e Ichika follando en el aire con el usuario',
