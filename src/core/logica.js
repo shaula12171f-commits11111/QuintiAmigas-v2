@@ -88,7 +88,8 @@ let estado = {
   // Máquina de corridas
   corridas: [],              // [{ de, en, donde, pose, id }]
   corridasCountPorChica: {}, // { Nino: 2, Miku: 1 }
-  ultimaCorrida: null
+  ultimaCorrida: null,
+  ultimaEscenaCompartida: null // { tag, chicas[], ts } continuidad "ellas"
 };
 
 const MAX_HISTORIAL = 20;
@@ -2340,6 +2341,7 @@ function accionesClaveMensaje(msg) {
   if (/\baire\b/.test(t)) keys.push('aire');
   if (/\bmision|misionero\b/.test(t)) keys.push('misionero');
   if (/\bcowgirl|vaquera\b/.test(t)) keys.push('cowgirl');
+  if (/\b(nos\s+corremos|me\s+corro|se\s+corren|corremos\s+dentro|dentro\s+de\s+ellas|creampie|llen[oa])\b/.test(t)) keys.push('corrida');
   return keys;
 }
 
@@ -2352,14 +2354,15 @@ function tagCubreAcciones(tag, accionesMsg) {
   const tl = String(tag || '').toLowerCase();
   if (!accionesMsg.length) return true;
   const mapa = {
-    standfuck: [/stand/, /de_pie/, /pared/],
+    standfuck: [/stand/, /de_pie/, /pared/, /folladas_de_pie/],
     doggy: [/doggy/, /doggystyle/, /cuatro/],
     anal: [/anal/, /culo/],
     dedos: [/dedo/, /concha/, /coño/, /finger/],
     oral: [/mamada/, /chup/, /oral/, /blow/],
     aire: [/aire/],
     misionero: [/mision/],
-    cowgirl: [/cowgirl/, /vaquera/]
+    cowgirl: [/cowgirl/, /vaquera/],
+    corrida: [/corren/, /corro/, /dentro/, /creampie/, /semen/, /llen/]
   };
   let cubiertas = 0;
   for (const a of accionesMsg) {
@@ -2373,6 +2376,10 @@ function tagCubreAcciones(tag, accionesMsg) {
   if (!accionesMsg.includes('dedos') && /dedo|finger/.test(tl) && accionesMsg.length <= 2) return false;
   // Si el mensaje NO pide oral, no usar tag de mamada como escena completa
   if (!accionesMsg.includes('oral') && /mamada|chup|blow|oral/.test(tl) && accionesMsg.includes('doggy') && !/doggy/.test(tl)) return false;
+  // Si piden corrida/dentro, el tag debe reflejarlo (no solo la pose base)
+  if (accionesMsg.includes('corrida') && !/corren|corro|dentro|creampie|semen|llen/.test(tl)) {
+    // sigue válido si no hay alternativa; el score penalizará
+  }
   return cubiertas >= Math.ceil(accionesMsg.length * 0.85);
 }
 
@@ -2435,7 +2442,11 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
     let score = names.length * 15;
     for (const a of accionesMsg) {
       if (tl.includes(a) || (a === 'doggy' && /doggy/.test(tl)) || (a === 'dedos' && /dedo/.test(tl))) score += 12;
+      if (a === 'standfuck' && /de_pie|stand|folladas_de_pie/.test(tl)) score += 10;
+      if (a === 'corrida' && /corren|corro|dentro|creampie|semen/.test(tl)) score += 22;
     }
+    // Si piden corrida y el tag NO la tiene, bajar mucho (preferir se_corren_dentro sobre solo de_pie)
+    if (accionesMsg.includes('corrida') && !/corren|corro|dentro|creampie|semen/.test(tl)) score -= 25;
     // Penalizar tags mucho más largos/complejos que el mensaje (trío viejo)
     const extra = chicasEnTagNombre(tl).length - names.length;
     if (extra > 0) score -= 40;
@@ -2519,6 +2530,46 @@ Reescribí el texto alineado al tag:`;
 }
 
 
+
+/** "ellas", "las", "nos corremos dentro…" sin nombres → continuidad de escena */
+function mensajeRefiereEscenaPlural(mensaje) {
+  const t = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (/\b(ellas|a ellas|dentro de ellas|follamos? de pie|las follamos|nos corremos|nos venimos)\b/.test(t)) return true;
+  if (/\b(las dos|las tres|ambas)\b/.test(t) && /\b(foll|corremos|dentro|de pie)\b/.test(t)) return true;
+  return false;
+}
+
+/**
+ * Chicas para imagen compartida: nombres en el mensaje, o escena activa si dice "ellas"/plural.
+ */
+function resolverChicasParaCompartida(mensajeUsuario, nombresBloques = []) {
+  const delMsg = detectarChicasEnTexto(mensajeUsuario);
+  if (delMsg.length >= 2) return delMsg;
+
+  if (!mensajeRefiereEscenaPlural(mensajeUsuario)) return delMsg;
+
+  const activas = (estado.chicasActivas || []).filter(
+    (c) => c && c !== 'Aldo' && c !== 'Sistema' && TODAS_CHICAS.includes(c)
+  );
+  if (activas.length >= 2) {
+    log('Compartida: plural/ellas → chicas activas', activas.join(','));
+    return [...activas];
+  }
+
+  const ultima = estado.ultimaEscenaCompartida;
+  if (ultima && Array.isArray(ultima.chicas) && ultima.chicas.length >= 2) {
+    log('Compartida: plural → última escena compartida', ultima.chicas.join(','), 'tag=', ultima.tag);
+    return [...ultima.chicas];
+  }
+
+  const deBloques = [...new Set((nombresBloques || []).filter((n) => n && n !== 'Aldo' && n !== 'Sistema' && TODAS_CHICAS.includes(n)))];
+  if (deBloques.length >= 2) {
+    log('Compartida: plural → bloques del turno', deBloques.join(','));
+    return deBloques;
+  }
+  return delMsg;
+}
+
 async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []) {
   const disponibles = [
     ...listarGrupalesDisponibles(),
@@ -2531,20 +2582,19 @@ async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []
   }
 
   const msg = String(mensajeUsuario || '').trim();
-  // CRÍTICO: solo cuentan las chicas NOMBRADAS EN EL MENSAJE del usuario.
-  // No usar bloques del turno (pueden responder hermanas que no están en la acción).
-  const delMensaje = detectarChicasEnTexto(msg);
+  // Chicas nombradas O continuidad ("ellas") desde activas / última compartida
+  const delMensaje = resolverChicasParaCompartida(msg, nombresBloques);
   const deBloques = [...new Set((nombresBloques || []).filter((n) => n && n !== 'Aldo' && n !== 'Sistema'))];
   const tamano = clasificarTamanoEscena(delMensaje.length);
-  log('Escena compartida: chicasMsg=', delMensaje.join(','), 'bloques=', deBloques.join(','), '→', tamano);
+  log('Escena compartida: chicasResueltas=', delMensaje.join(','), 'bloques=', deBloques.join(','), '→', tamano);
 
-  // Sin 2+ chicas en el mensaje → no hay imagen compartida (evita reusar trío anterior)
+  // Sin 2+ chicas resueltas → individuales
   if (delMensaje.length < 2 && !/\baldo\b/i.test(msg)) {
-    log('Compartida: mensaje con <2 chicas → null (individuales)');
+    log('Compartida: <2 chicas resueltas → null (individuales)');
     return null;
   }
 
-  // 1) Match local solo con chicas del MENSAJE
+  // 1) Match local con chicas resueltas
   const local = matchLocalEscenaCompartida(disponibles, msg, delMensaje);
   if (local && local.url) {
     return getGrupalPorTag(local.tag) || getParejaPorTag(local.tag) || getMultiHombresPorTag(local.tag) || local;
@@ -3158,23 +3208,22 @@ export async function enviarMensaje(mensajeUsuario) {
   // === IMAGEN COMPARTIDA: solo si la escena es UNA misma acción grupal, no acciones mixtas ===
   try {
     const nombresBloques = partes.map((p) => p.chica).filter((c) => c && c !== 'Aldo' && c !== 'Sistema' && !partes.find(x => x.chica === c && x.esEventoHistoria));
-    const chicasMsg = detectarChicasEnTexto(mensajeUsuario);
+    const chicasMsg = resolverChicasParaCompartida(mensajeUsuario, nombresBloques);
     const msgLow = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
     const nombraAldoYChica = msgLow.includes('aldo') && chicasMsg.length >= 1;
+    const pluralContinuidad = mensajeRefiereEscenaPlural(mensajeUsuario) && chicasMsg.length >= 2;
 
-    // Compartida SOLO si el MENSAJE del usuario nombra 2+ chicas (o Aldo+chica).
-    // NO basarse en cuántas responden en bloques (si no, "follo a ichika en el aire"
-    // reutiliza el trío anterior porque Nino/Miku también hablan).
-    const convieneCompartida = chicasMsg.length >= 2 || nombraAldoYChica;
+    // Compartida si hay 2+ chicas (nombradas o resueltas por "ellas"/escena activa)
+    // o Aldo+chica. Evita reusar trío si el mensaje es 1-a-1 sin plural.
+    const convieneCompartida = chicasMsg.length >= 2 || nombraAldoYChica || pluralContinuidad;
 
-    log('¿Intentar compartida?', convieneCompartida, 'chicasMsg=', chicasMsg.join(','), 'bloques=', nombresBloques.join(','));
+    log('¿Intentar compartida?', convieneCompartida, 'chicasResueltas=', chicasMsg.join(','), 'bloques=', nombresBloques.join(','));
 
     if (convieneCompartida) {
       const compartida = await elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques);
       if (compartida && compartida.url) {
         const tagLow = String(compartida.tag || '').toLowerCase();
         const nombradasEnTag = chicasMsg.filter((c) => tagLow.includes(c.toLowerCase()));
-        // Si el tag nombra chicas, solo esas; si no nombra (raro), todas del mensaje
         const targets = nombradasEnTag.length ? nombradasEnTag : chicasMsg;
         let aplicadas = 0;
         for (const p of partes) {
@@ -3188,6 +3237,11 @@ export async function enviarMensaje(mensajeUsuario) {
           p.imagen_tag = compartida.tag || p.imagen_tag;
           aplicadas++;
         }
+        estado.ultimaEscenaCompartida = {
+          tag: compartida.tag,
+          chicas: targets.slice(),
+          ts: Date.now()
+        };
         log('Imagen compartida aplicada:', compartida.tag, '→', aplicadas, 'de', targets.join(','));
       } else {
         log('Imagen compartida → ninguno; se mantienen tags individuales por chica');
