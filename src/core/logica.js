@@ -545,6 +545,90 @@ function actualizarRopaDesdeMensajeUsuario(msg, chica) {
   }
 }
 
+
+/** ¿El usuario pregunta por cosplay / ropa / looks disponibles? */
+function mensajePreguntaInventarioRopa(mensaje) {
+  const m = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!m.trim()) return null;
+  const preguntaCosplay = /\b(cosplay|disfraz|uniforme|colegiala)\b/.test(m)
+    && /\b(que|qué|cual|cuál|tienen|tenes|tenés|tiene|hay|mostr|lista|ponen|ponete|visten)\b/.test(m)
+    || /\b(que|qué)\s+cosplay/.test(m)
+    || /\bcosplays?\s+(tienen|tenes|hay)\b/.test(m)
+    || /\b(que|qué)\s+disfraz/.test(m);
+  const preguntaRopa = /\b(ropa|outfit|atuendo|vestimenta|traje|look)\b/.test(m)
+    && /\b(que|qué|cual|cuál|tienen|tenes|tenés|lleva|pones|hay)\b/.test(m)
+    || /\b(que|qué)\s+ropa/.test(m)
+    || /\bcon\s+que\s+ropa\b/.test(m);
+  if (preguntaCosplay && preguntaRopa) return 'ambos';
+  if (preguntaCosplay) return 'cosplay';
+  if (preguntaRopa) return 'ropa';
+  // "chicas que cosplays tienen" / listado
+  if (/\bcosplay/.test(m) && /\b(tienen|tenes|lista|disponib)\b/.test(m)) return 'cosplay';
+  return null;
+}
+
+function esTagTipoCosplay(tag, desc = '') {
+  const t = (String(tag) + ' ' + String(desc)).toLowerCase();
+  return /cosplay|disfraz|uniforme|colegiala|sailor|gatita|neko|maid|kimono|idol/.test(t)
+    && !/chupando|doggystyle|misionero|follando_anal|handjob|me_corro/.test(t);
+}
+
+function esTagTipoRopaLook(tag, desc = '') {
+  const t = (String(tag) + ' ' + String(desc)).toLowerCase();
+  if (/chupando|doggystyle|misionero|cowgirl|follando|handjob|paja|69|dedos_en|semen|corrida|deepthroat|standfuck|sidefuck/.test(t)
+    && !/cosplay|uniforme|ropa_|vestido|bikini|tanga|lenceria/.test(t)) {
+    return false;
+  }
+  return /cosplay|disfraz|uniforme|colegiala|idol|vestido|yukata|bikini|tanga|lenceria|ropa_|sujetador|maid|gatita|sailor|neko|kimono|falda|quitandose|desnuda|selfie_/.test(t);
+}
+
+/**
+ * Inventario real desde imagenes.js (tags + descripciones).
+ * tipo: 'cosplay' | 'ropa' | 'ambos'
+ */
+function listarInventarioLooks(chica, tipo = 'ambos') {
+  const tags = (typeof listarTags === 'function' ? listarTags(chica) : []) || [];
+  const out = [];
+  for (const tag of tags) {
+    const desc = (typeof getTagDescripcion === 'function' ? getTagDescripcion(chica, tag) : '') || '';
+    const esCos = esTagTipoCosplay(tag, desc);
+    const esRopa = esTagTipoRopaLook(tag, desc);
+    if (tipo === 'cosplay' && !esCos) continue;
+    if (tipo === 'ropa' && !esRopa) continue;
+    if (tipo === 'ambos' && !esCos && !esRopa) continue;
+    out.push({ tag, descripcion: desc, esCosplay: esCos });
+  }
+  return out;
+}
+
+function textoInventarioLooksParaPrompt(chicas, tipo) {
+  const lineas = [];
+  lineas.push('## INVENTARIO REAL DE LOOKS (solo estos existen en imagenes; PROHIBIDO inventar otros)');
+  lineas.push(`Consulta del usuario: ${tipo === 'cosplay' ? 'cosplay/disfraz' : tipo === 'ropa' ? 'ropa/outfit' : 'cosplay y ropa'}.`);
+  for (const ch of chicas) {
+    if (!ch || ch === 'Aldo') continue;
+    const inv = listarInventarioLooks(ch, tipo === 'ambos' ? 'ambos' : tipo);
+    if (!inv.length) {
+      if (tipo === 'cosplay') {
+        lineas.push(`- ${ch}: NO tiene ningún cosplay/disfraz cargado. Debe decirlo con naturalidad (ej. "no tengo ningún cosplay…"). PROHIBIDO inventar gatita, Sailor Moon, etc.`);
+      } else if (tipo === 'ropa') {
+        lineas.push(`- ${ch}: NO tiene looks de ropa listados. Debe decir que no tiene ese inventario cargado. PROHIBIDO inventar prendas de catálogo falso.`);
+      } else {
+        lineas.push(`- ${ch}: sin cosplay ni ropa de catálogo. Decirlo; no inventar.`);
+      }
+    } else {
+      lineas.push(`- ${ch} (${inv.length}):`);
+      for (const it of inv.slice(0, 25)) {
+        const d = it.descripcion ? ` — ${it.descripcion.slice(0, 80)}` : '';
+        lineas.push(`  · ${it.tag}${d}`);
+      }
+    }
+  }
+  lineas.push('Si preguntan qué tienen: respondé SOLO con lo de esta lista. Si la lista de una chica está vacía, que diga que no tiene.');
+  return lineas.join('\n');
+}
+
+
 /** Tags incoherentes con el estado de ropa actual */
 function tagIncompatibleConRopa(tag, ropaActual) {
   const t = String(tag || '').toLowerCase();
@@ -2784,6 +2868,14 @@ export async function enviarMensaje(mensajeUsuario) {
   system += 'Si habla de pija/bolas, son LAS DEL USUARIO (te chupo la pija, tus bolas, etc.).\n';
   system += '\n## FORMATO DE BLOQUES\n';
   system += 'Máximo UN bloque [Nombre]: por personaje en este turno. PROHIBIDO repetir [Ichika]: varias veces; juntá todo en un solo bloque por chica.\n';
+  // Inventario real cosplay/ropa si el usuario pregunta
+  const tipoInv = mensajePreguntaInventarioRopa(mensajeUsuario);
+  if (tipoInv) {
+    const chicasInv = [...new Set([estado.chica, ...(estado.chicasActivas || [])].filter(Boolean))];
+    system += '\n\n' + textoInventarioLooksParaPrompt(chicasInv, tipoInv) + '\n';
+    log('Inventario looks inyectado:', tipoInv, 'chicas=', chicasInv.join(','));
+  }
+
   if (estado.accionActual) {
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
