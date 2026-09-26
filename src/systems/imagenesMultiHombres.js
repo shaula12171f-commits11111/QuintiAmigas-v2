@@ -16,6 +16,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  ESCENAS (agregá solo con URL real)
 // ---------------------------------------------------------------------------
 const ESCENAS = {
+  miku_chupando_polla_y_follada_en_misionero_nos_corremos_dentro_de_ella: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/multi_hombres/miku_chupando_polla_y_follada_en_misionero_nos_corremos_dentro_de_ella.jpg',
+    descripcion: 'se corren dentro de miku en su boca y su concha',
+    audio: ''
+  },
+
   miku_chupando_polla_y_siendo_follada_en_misionero: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/multi_hombres/miku_chupando_polla_y_siendo_follada_en_misionero.jpg',
     descripcion: 'miku_chupando_polla_y_siendo_follada_en_misionero',
