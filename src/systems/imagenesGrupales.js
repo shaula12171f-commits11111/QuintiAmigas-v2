@@ -23,7 +23,7 @@ const DUOS = {
     audio: ''
   },
 
-  nino_miku_follo_a_nino_matting_press_mientras_miku_mira: {
+  nino_miku_follo_a_nino_matting_press_mientras_miku_mira_habitacion: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/nino_miku_follo_a_nino_matting_press_mientras_miku_mira.jpg',
     descripcion: 'miku se masturba mientras mira',
     audio: ''
@@ -35,13 +35,13 @@ const DUOS = {
     audio: ''
   },
 
-  nino_miku_se_derrama_semen_de_sus_conchas: {
+  nino_miku_se_derrama_semen_de_sus_conchas_habitacion: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/nino_miku_se_derrama_semen_de_sus_conchas.jpg',
     descripcion: 'despues de follar',
     audio: ''
   },
 
-  nino_miku_meto_los_dedos_en_la_concha_de_nino_mientras_follo_a_miku_misionero: {
+  nino_miku_meto_los_dedos_en_la_concha_de_nino_mientras_follo_a_miku_misionero_habitacion: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/nino_miku_meto_los_dedos_en_la_concha_de_nino_mientras_follo_a_miku_misionero.jpg',
     descripcion: 'nino_miku_meto_los_dedos_en_la_concha_de_nino_mientras_follo_a_miku_misionero',
     audio: ''
