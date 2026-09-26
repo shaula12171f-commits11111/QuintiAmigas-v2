@@ -17,6 +17,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  DUOS (2 chicas)
 // ---------------------------------------------------------------------------
 const DUOS = {
+  nino_miku_nino_me_monta_mientras_miku_mira_en_mi_habitacion: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/nino_miku_nino_me_monta_mientras_miku_mira_en_mi_habitacion.jpg',
+    descripcion: 'nino_me_monta_mientras_miku_mira_en_mi_habitacion',
+    audio: ''
+  },
+
   nino_miku_se_derrama_semen_de_sus_conchas: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/nino_miku_se_derrama_semen_de_sus_conchas.jpg',
     descripcion: 'despues de follar',
