@@ -1,6 +1,6 @@
 import {
   setNombreUsuario, iniciarChatLibre, iniciarChatLasCinco, iniciarHistoria, enviarMensaje,
-  regenerarUltimaRespuesta, resetChat, volverAlSelector, getEstado, getResumenConversacion,
+  regenerarUltimaRespuesta, resetChat, volverAlSelector, getEstado, getResumenConversacion, textoMetaEstadoUI,
   getChicasDisponibles, exportarEstadoCompleto, restaurarEstadoCompleto
 } from './src/core/logica.js';
 import { ensureImagenesLoaded, getImagenSelector, getDescripcionChica } from './src/systems/imagenes.js';
@@ -50,8 +50,15 @@ async function playAudioSequence(audioEls) {
 }
 function actualizarMeta(r) {
   if (!r) r = getEstado();
-  const a = (r.chicasActivas || [r.chica]).join(', ');
-  if ($('chat-meta')) $('chat-meta').textContent = `${a} · fase: ${r.fase || 'normal'} · relación: ${r.relacion || '—'}`;
+  const a = (r.chicasActivas || [r.chica]).filter(Boolean).join(', ');
+  let metaLine = '';
+  try {
+    if (typeof textoMetaEstadoUI === 'function') metaLine = textoMetaEstadoUI();
+  } catch (_) {}
+  if (!metaLine) {
+    metaLine = `fase: ${r.fase || 'normal'} · relación: ${r.relacion || '—'}`;
+  }
+  if ($('chat-meta')) $('chat-meta').textContent = a ? `${a} · ${metaLine}` : metaLine;
   if ($('chat-who')) $('chat-who').textContent = a;
 }
 function fmtText(t) {
