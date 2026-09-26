@@ -2762,13 +2762,13 @@ ARCO: (capítulo breve: ej. oficina | fiesta | VIP | post-sexo | día siguiente;
 
 Reglas:
 - Máximo ~400 palabras, denso, tercera persona.
-- ACCIONES = solo el estado AHORA (este turno): quién hace qué CON QUIÉN (ej. "Nino: doggy con Aldo; Miku: doggy con usuario + condón").
+- ACCIONES = estado AHORA con PAREJAS EXPLÍCITAS: "Usuario→Nino de pie; Aldo→Ichika de pie". PROHIBIDO escribir que el usuario folla a ambas si el texto dice que cada una está con alguien distinto.
+- Si hay 2 chicas + usuario + Aldo: inferí del diálogo quién penetra a quién (ej. Nino habla a Fabrizio y Aldo a Ichika). No fusiones las parejas.
 - HECHOS_FIJOS del sistema son sagrados. Copialos. NUNCA contradigas pose/pareja/condón/corridas.
-- Si hay CORRIDAS en HECHOS_FIJOS/sistema, copialas tal cual. PROHIBIDO inventar corridas extra o contadores (#2 #3 #4) que no estén en el sistema.
-- Si el resumen anterior tiene corridas inventadas que no están en HECHOS_FIJOS del sistema, elimínalas.
-- RELACION: una entrada por chica con el USUARIO + NPCs (ej. "Aldo: novio de Miku"). Si Miku es novia de Aldo, NO la marques sexfriend/novia del usuario salvo que HECHOS_FIJOS lo digan.
-- LUGAR: solo si está claro en el resumen anterior o el intercambio. Si no, "no definido". PROHIBIDO inventar café/oficina.
-- No mezcles poses viejas de otra escena si el turno actual las reemplazó (preferí el hecho más reciente por chica+pose).
+- CORRIDAS: copiá las del sistema; cada corrida con de/en (Usuario en Nino; Aldo en Ichika). PROHIBIDO inventar contadores extra.
+- RELACION: formato por persona, no global. Ej: "Nino: conocida (con usuario); Ichika: conocida / novia de Aldo; Aldo: novio de Ichika".
+- LUGAR: solo si está claro. Si no, "no definido".
+- No mezcles poses viejas de otra escena si el turno las reemplazó.
 - Evento de celular: anotá en HECHOS sin borrar el sexo en curso.`;
 
   const hechosFijos = (estado.hechos || []).slice(-16).join('\n- ') || '(ninguno aún)';
@@ -3425,6 +3425,42 @@ export function volverAlSelector() {
   estado.mensajesCount = 0;
   estado.ultimoMensajeUsuario = null;
   estado.ropaPorChica = {};
+}
+
+
+/** Texto de meta UI: fase de escena + relación/vínculo por personaje. */
+export function textoMetaEstadoUI() {
+  const fase = estado.fase || 'normal';
+  const partes = [];
+  const nombres = [...new Set([...(estado.chicasActivas || []), estado.chica].filter(Boolean))];
+  for (const n of nombres) {
+    if (n === 'Aldo') continue;
+    const rel = getRelacionChica(n);
+    let extra = '';
+    // ¿Algún NPC es novio de esta chica?
+    for (const [npc, vin] of Object.entries(estado.vinculosNPC || {})) {
+      const v = String(vin || '').toLowerCase();
+      if (v.includes(String(n).toLowerCase()) && /novi[oa]/.test(v)) {
+        extra = ` / ${vin}`;
+        break;
+      }
+    }
+    partes.push(`${n}: ${rel}${extra}`);
+  }
+  // NPCs presentes
+  const msgHasAldo = (estado.chicasActivas || []).includes('Aldo')
+    || Object.keys(estado.vinculosNPC || {}).includes('Aldo');
+  if (msgHasAldo || (estado.ultimaEscenaCompartida && /aldo/i.test(JSON.stringify(estado.historial?.slice?.(-2) || '')))) {
+    const vin = (estado.vinculosNPC || {}).Aldo || 'NPC';
+    partes.push(`Aldo: ${vin}`);
+  } else if ((estado.vinculosNPC || {}).Aldo) {
+    partes.push(`Aldo: ${estado.vinculosNPC.Aldo}`);
+  }
+  // Si hay vinculos y no se listó Aldo pero está en resumen recientes — optional skip
+  if (!partes.length) {
+    return `fase: ${fase} · relación: ${estado.relacion || '—'}`;
+  }
+  return `fase: ${fase} · ${partes.join(' · ')}`;
 }
 
 export function getResumenConversacion() {
