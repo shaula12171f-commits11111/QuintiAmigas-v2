@@ -1652,7 +1652,33 @@ function partirBloquesMulti(texto, chicaDefault) {
     const body = texto.slice(start, end).trim();
     if (body) bloques.push({ chica: indices[i].nombre, texto: body });
   }
-  return bloques.length ? bloques : [{ chica: chicaDefault, texto: texto.trim() }];
+  if (!bloques.length) return [{ chica: chicaDefault, texto: texto.trim() }];
+  // Un solo mensaje por personaje por turno (la IA a veces repite [Ichika]: tres veces)
+  return fusionarBloquesMismaChica(bloques);
+}
+
+/** Fusiona varios bloques de la misma chica en uno (orden de primera aparición). */
+function fusionarBloquesMismaChica(bloques) {
+  const orden = [];
+  const mapa = new Map();
+  for (const b of bloques) {
+    const k = b.chica || 'Sistema';
+    if (!mapa.has(k)) {
+      mapa.set(k, { ...b, texto: String(b.texto || '').trim() });
+      orden.push(k);
+    } else {
+      const prev = mapa.get(k);
+      const extra = String(b.texto || '').trim();
+      if (extra) prev.texto = (prev.texto + '\n\n' + extra).trim();
+      if (b.esAntesEvento) prev.esAntesEvento = true;
+      if (b.esDespuesEvento) prev.esDespuesEvento = true;
+    }
+  }
+  const out = orden.map((k) => mapa.get(k));
+  if (out.length < bloques.length) {
+    log('Bloques fusionados por misma chica:', bloques.length, '→', out.length);
+  }
+  return out;
 }
 
 function normUser(msg) {
@@ -2756,6 +2782,8 @@ export async function enviarMensaje(mensajeUsuario) {
   system += '\n\n## RECORDATORIO GÉNERO (este turno)\n';
   system += 'Usuario=HOMBRE (pija y bolas). Chica=MUJER. PROHIBIDO que ella diga "mi pija", "mis testículos", "me muevas la pija" o "me aprietes los testículos" como si fueran de ella. ';
   system += 'Si habla de pija/bolas, son LAS DEL USUARIO (te chupo la pija, tus bolas, etc.).\n';
+  system += '\n## FORMATO DE BLOQUES\n';
+  system += 'Máximo UN bloque [Nombre]: por personaje en este turno. PROHIBIDO repetir [Ichika]: varias veces; juntá todo en un solo bloque por chica.\n';
   if (estado.accionActual) {
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
