@@ -17,6 +17,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  DUOS (2 chicas)
 // ---------------------------------------------------------------------------
 const DUOS = {
+  nino_miku_meto_los_dedos_en_la_concha_de_nino_mientras_follo_a_miku_misionero: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/grupales/nino_miku_meto_los_dedos_en_la_concha_de_nino_mientras_follo_a_miku_misionero.jpg',
+    descripcion: 'nino_miku_meto_los_dedos_en_la_concha_de_nino_mientras_follo_a_miku_misionero',
+    audio: ''
+  },
+
   nino_ichika_doble_mamada: {
     url: 'https://raw.githubusercontent.com/SORFAR123123/Putas-de-fabri/main/imagenes/img_1772841651283.jpg',
     descripcion: 'Nino e Ichika mamando al usuario',
