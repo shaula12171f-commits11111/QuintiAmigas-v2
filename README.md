@@ -12,6 +12,9 @@ Chatbot de roleplay con las Quintillizas Nakano (y Emilia). Versión limpia basa
 - **Resumen progresivo**: ya no se manda el historial completo a la IA. Se mantiene un resumen que se actualiza en cada turno (ahorra tokens y evita errores 413).
 - **Tags en llamada separada**: la lista grande de tags no va en el prompt principal; el tag de imagen se elige en una segunda API call.
 - **Multi mejorado**: si mencionás a otros personajes actuando (ej. Miku y Aldo), también responden.
+- **Un bloque por personaje**: si la IA repite `[Ichika]:` varias veces, se fusionan en un solo mensaje.
+- **Ropa `cosplay`**: pedido de cosplay/disfraz actualiza el estado; el tag visual lo elige la IA entre los disponibles.
+- **Invitación vs acto (tags)**: el selector de imagen (Qwen) decide si hay solo preparación/oferta de pose o sexo en curso. No fuerza `doggystyle` solo porque ella se pone a cuatro o dice “por detrás”.
 
 ## Lore (deshabilitado temporalmente)
 
@@ -41,6 +44,15 @@ src/
 config.example.js
 index.html
 ```
+
+## Tags: invitación vs acto
+
+El tag de imagen **no es una regla fija de keywords**. La IA (selector de tags) interpreta el contexto:
+
+- **Solo invitación / preparación** (ofrece el culo, “acércate por detrás”, se apoya en la cama) → evita tags de penetración si el acto aún no empezó.
+- **Acto en curso** (follar, meter, embestidas, oral activo) → tags de pose sexual normales (`doggystyle`, etc.).
+
+Respaldo de `logica.js` ante cada cambio: carpeta `respaldos/` y bitácora en `README_CAMBIOS.md`.
 
 ## Imágenes grupales
 
