@@ -16,6 +16,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  ESCENAS (agregá solo con URL real)
 // ---------------------------------------------------------------------------
 const ESCENAS = {
+  miku_chupando_polla_y_siendo_follada_en_misionero: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/multi_hombres/miku_chupando_polla_y_siendo_follada_en_misionero.jpg',
+    descripcion: 'miku_chupando_polla_y_siendo_follada_en_misionero',
+    audio: ''
+  },
+
   follando_en_el_aire_nino_recibe_por_el_ano_y_por_la_concha: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/multi_hombres/follando_en_el_aire_nino_recibe_por_el_ano_y_por_la_concha.jpg',
     descripcion: 'nino follada por dos  hombres por el ano y por el coño en el aire',
