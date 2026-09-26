@@ -2416,6 +2416,9 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
     if (!tagCubreAcciones(tl, accionesMsg)) return false;
     // Tag con "dedos" solo si el mensaje habla de dedos
     if (/dedo|finger/.test(tl) && !/dedo|concha|finger/.test(msg)) return false;
+    // Tag de corrida/dentro solo si el mensaje habla de corrida
+    const msgQuiereCorrida = /\b(nos\s+corremos|me\s+corro|se\s+corren|corremos\s+dentro|dentro\s+de\s+ellas|creampie)\b/.test(msg);
+    if (!msgQuiereCorrida && /se_corren|corren_dentro|creampie|_dentro_de_ellas|_se_corren/.test(tl)) return false;
     // Parejas cruzadas: evitar tags tipo "mientras meto dedos a miku y ichika"
     if (esParejasCruzadasOParalelas(mensajeUsuario) && /mientras|dedo|miku/.test(tl) && !/aldo/.test(tl)) {
       return false;
@@ -2445,8 +2448,16 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
       if (a === 'standfuck' && /de_pie|stand|folladas_de_pie/.test(tl)) score += 10;
       if (a === 'corrida' && /corren|corro|dentro|creampie|semen/.test(tl)) score += 22;
     }
-    // Si piden corrida y el tag NO la tiene, bajar mucho (preferir se_corren_dentro sobre solo de_pie)
+    // Si piden corrida y el tag NO la tiene → bajar (preferir se_corren_dentro)
     if (accionesMsg.includes('corrida') && !/corren|corro|dentro|creampie|semen/.test(tl)) score -= 25;
+    // Si NO piden corrida, NO usar tags de "se corren / dentro / creampie" (solo pose base)
+    if (!accionesMsg.includes('corrida') && /se_corren|corren_dentro|creampie|_dentro_de_/.test(tl)) {
+      score -= 45;
+    }
+    // Preferir el tag más corto/simple cuando empatan en pose (evita siempre el de corrida)
+    if (!accionesMsg.includes('corrida')) {
+      score -= Math.min(20, Math.floor(tl.length / 8));
+    }
     // Penalizar tags mucho más largos/complejos que el mensaje (trío viejo)
     const extra = chicasEnTagNombre(tl).length - names.length;
     if (extra > 0) score -= 40;
