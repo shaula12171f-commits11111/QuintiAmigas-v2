@@ -1630,48 +1630,22 @@ function postProcesarFase(respuestaTexto) {
 }
 
 function partirBloquesMulti(texto, chicaDefault) {
-  // Detecta [Nino]:, Nino:, **Nino:** en cualquier parte del texto
-  const re = /(?:\[\s*)?(Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia|Aldo)(?:\s*\])?\s*:/gi;
-  const indices = [];
-  let m;
+  const re = /\[\s*(Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia|Aldo)\s*\]\s*:/gi;
+  const indices = []; let m;
   while ((m = re.exec(texto)) !== null) {
     const fixed = TODOS.find((x) => x.toLowerCase() === m[1].toLowerCase()) || m[1];
-    // Evitar falsos positivos tipo "hora:" — el nombre debe ser exacto (ya lo es por el grupo)
     indices.push({ nombre: fixed, index: m.index, len: m[0].length });
   }
-  if (!indices.length) return [{ chica: chicaDefault, texto: String(texto || '').trim() }];
-
-  // Quitar solapes (mismo inicio)
-  indices.sort((a, b) => a.index - b.index);
-  const clean = [];
-  for (const it of indices) {
-    if (clean.length && it.index < clean[clean.length - 1].index + clean[clean.length - 1].len) continue;
-    clean.push(it);
-  }
-
+  if (!indices.length) return [{ chica: chicaDefault, texto: texto.trim() }];
   const bloques = [];
-  for (let i = 0; i < clean.length; i++) {
-    const start = clean[i].index + clean[i].len;
-    const endPos = i + 1 < clean.length ? clean[i + 1].index : texto.length;
-    let body = texto.slice(start, endPos).trim();
-    // Si el cuerpo empieza con otro nombre residual, limpiar
-    body = body.replace(/^(?:\*\*)?\[\s*(?:Ichika|Nino|Miku|Yotsuba|Itsuki|Emilia|Aldo)\s*\]\s*:\s*/i, '').trim();
-    if (body) bloques.push({ chica: clean[i].nombre, texto: body });
+  for (let i = 0; i < indices.length; i++) {
+    const start = indices[i].index + indices[i].len;
+    const end = i + 1 < indices.length ? indices[i + 1].index : texto.length;
+    const body = texto.slice(start, end).trim();
+    if (body) bloques.push({ chica: indices[i].nombre, texto: body });
   }
-  if (!bloques.length) return [{ chica: chicaDefault, texto: String(texto || '').trim() }];
-
-  // 1-a-1: varios bloques de la MISMA chica → un solo mensaje
-  // Multi: personajes distintos → un mensaje por personaje
-  const nombresUnicos = [...new Set(bloques.map((b) => b.chica))];
-  if (nombresUnicos.length === 1) {
-    return [{
-      chica: nombresUnicos[0],
-      texto: bloques.map((b) => b.texto).join('\n\n').trim()
-    }];
-  }
-  return bloques;
+  return bloques.length ? bloques : [{ chica: chicaDefault, texto: texto.trim() }];
 }
-
 
 function normUser(msg) {
   let t = String(msg || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
@@ -1864,17 +1838,28 @@ function extractAccionRelevanteParaChica(chica, mensajeUsuario, otrasChicas = []
 
 
 
-/** Detecta pose sexual descrita en el texto de la chica (continuar imagen aunque el usuario hable de otra). */
+/**
+ * Detecta pose sexual EN CURSO en el texto (no mera invitación/preparación).
+ * La decisión fina la hace Qwen; esto solo evita forzar doggy por "por detrás" sin acto.
+ */
 function detectarPoseSexualEnTexto(texto) {
   const t = String(texto || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   if (!t) return null;
-  const haySexo = /\b(foll|penetr|me penetra|lo siento dentro|polla|verga|pija|embest|empuj|metiend|dentro|coge|cogiend|gem|ano|culo|concha|coño|ritmo|embestida|arquea|recibirlo)\b/.test(t);
-  if (!haySexo) return null;
+  // Acto consumado / en curso (no solo ofrecer pose)
+  const actoEnCurso = /\b(foll|penetr|me penetra|te penetra|lo siento dentro|metiend|meti[eé]nd|la tiene dentro|coge|cogiend|embestida|ritmo de (las )?embest|chup[aá]nd|mamand|mamánd|deepthroat|ordenand|ordeñ)\b/.test(t);
+  const soloInvita = /\b(acercate|acércate|quiero que me tomes|toma el control|ofrec|invit|prepar|cuando entremos|sin que (me )?hayas|esperando que)\b/.test(t)
+    && !actoEnCurso;
+  if (soloInvita) return null;
+  if (!actoEnCurso && !/\b(chup|mamad|oral|doggy|mision|follando|dentro de m[ií])\b/.test(t)) return null;
+  // Sin verbo de acto: no forzar penetración solo por "por detrás" / "culo" / "empuj"
+  if (!actoEnCurso) {
+    if (/\b(chup|mamad|oral|petera|en (la )?boca|deepthroat)\b/.test(t)) return 'chupando';
+    return null;
+  }
   if (/\b(doggy|doggystyle|a cuatro|perrito|por detras|por detrás|detras de|detrás de)\b/.test(t)) return 'doggy';
   if (/\b(misioner|misionero)\b/.test(t)) return 'misionero';
   if (/\b(vaquera|cowgirl|horcajadas|montand|montánd)\b/.test(t)) return 'cowgirl';
   if (/\b(stand\s*fuck|standfuck|de pie|contra la pared)\b/.test(t)) return 'standfuck';
-  // Oral / petera solo si es el foco (no si además la penetran)
   if (/\b(chup|mamad|oral|petera|en (la )?boca|deepthroat|lengua.*punta|lam.*glande)\b/.test(t) && !/\b(penetr|me penetra|embest)\b/.test(t)) {
     return 'chupando';
   }
@@ -2035,8 +2020,12 @@ Reglas estrictas (prioridad de arriba hacia abajo):
 5) SOLO podés elegir un tag que esté en la lista. No inventes tags.
 6) Prestá atención a la zona del cuerpo y a QUIÉN recibe la acción.
 7) MULTI: el "mensaje del usuario" que recibís puede estar REORTADO a ESTA chica. Elegí SOLO la acción de ${chica}. PROHIBIDO copiar doggy/oral/etc. de otra hermana si no le corresponde a ella.
-7b) Si la RESPUESTA DE LA CHICA describe que ELLA sigue siendo penetrada / en doggy / misionero / oral (aunque el usuario hable de otra), elegí el tag de ESA pose. PROHIBIDO "hablando" solo porque también habla o tiene celos.
+7b) Si la RESPUESTA DE LA CHICA describe que ELLA sigue siendo penetrada / en doggy / misionero / oral EN CURSO (aunque el usuario hable de otra), elegí el tag de ESA pose. PROHIBIDO "hablando" solo porque también habla o tiene celos.
 7c) "hablando" solo si NO hay acto sexual en curso en su cuerpo en este turno.
+7d) INVITACIÓN / PREPARACIÓN vs ACTO (decisión contextual, no automática):
+   - Si ella SOLO se posiciona, ofrece el cuerpo, invita ("acércate por detrás", "toma el control", "quiero que me tomes", se apoya en la cama, muestra el culo) PERO ni el usuario ni el texto describen penetración/follar/meter/chupar EN CURSO → NO elijas tags de penetración (doggystyle, misionero, standfuck, etc.).
+   - En ese caso elegí el tag de la lista que mejor represente invitación, pose preparatoria, coqueteo o el más cercano NO penetrativo (según tags disponibles). Usá tu criterio según el texto.
+   - Solo tags de penetración/oral activo si el acto YA está ocurriendo en el mensaje del usuario o en la respuesta como hecho consumado (la mete, folla, chupa, ritmo de embestidas, etc.).
 8) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
 9) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
 
@@ -2057,6 +2046,7 @@ RESPUESTA DE LA CHICA:
 TAGS DISPONIBLES (elegí UNO exacto de esta lista):
 ${listaTags}
 
+Pregunta guía: ¿el acto sexual ya está ocurriendo, o solo hay invitación/preparación de pose? Elegí el tag acorde.
 Respondé solo el tag:`;
 
   try {
@@ -2746,15 +2736,14 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.accionActual) {
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
-  system += '\n## ESTILO (DIÁLOGO PRIMERO)\n';
-  system += 'PRIORIDAD: que HABLEN. Narración mínima.\n';
-  system += 'Cada personaje: mínimo 2-3 frases de diálogo hablado. Máximo 2-3 oraciones cortas de acción. PROHIBIDO bloques 90% narración.\n';
-  system += 'PROHIBIDO: sintiendo, dejando que, ofreciendo, hundiendo su cadera, obligándome a arquear, contraste de tu amigo, prosa de novela.\n';
-  system += 'Estructura: *acción corta* + diálogo + *acción corta* + diálogo.\n';
-  system += 'Primera persona del bloque. Solo tu cuerpo y tu pose. No narres al otro en tercera dentro de tu bloque.\n';
+  system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
+  system += 'Escribí en PROSA NARRATIVA densa: mínimo 2–4 párrafos por personaje activo; más si el usuario da libertad, cambia de día/lugar o pide que continúes. ';
+  system += 'Incluí lugar, luz, ropa/cuerpo, gestos, silencios, miradas y diálogo natural. Suena a ficción erótica bien escrita, no a chat corto. ';
+  system += 'Si el usuario avanza el tiempo (mañana, oficina, fiesta, una semana), narrá el salto de escena con claridad. ';
+  system += 'NPCs con voz propia. PROHIBIDO respuestas de 1–2 líneas en turnos de escena.\n';
   system += '\n## MEMORIA Y ARCO\n';
   system += 'Usá el MAPA DE ESCENA (PRESENTES, ACCIONES, HECHOS, CORRIDAS, RELACIONES). No inventes corridas ni contradigas HECHOS_FIJOS. ';
-  system += 'Recordá quién hace qué con quién. Si el usuario se corre en X y Aldo en Y, no mezcles destinos.\n';
+  system += 'Si hubo celular/foto, reaccioná pero no borres el acto o charla en curso. Recordá quién es novia de quién y con quién está cada una.\n';
   // Evento de historia EN ESTE TURNO: dos bloques de la chica + mensaje ajeno en el medio
   if (eventoHistoria && eventoHistoria.texto) {
     const de = eventoHistoria.de || 'Alguien';
@@ -2780,13 +2769,11 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.chicasActivas.length > 1) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
-    system += `\n\n⚠️ MULTI ACTIVO. Presentes (TODOS con bloque): ${estado.chicasActivas.join(', ')}.`;
-    system += `\nOBLIGATORIO: un bloque [Nombre]: por CADA presente.`;
-    system += `\nCADA bloque: mínimo 2-3 frases de diálogo hablado; narración corta. PROHIBIDO bloques que solo narren sin hablar.`;
-    system += `\nCada [Nombre] habla en PRIMERA persona de ESA persona. Describe SOLO su cuerpo y su pose. PROHIBIDO que Nino narre lo que hace Aldo en tercera como si fuera escena de libro.`;
-    system += `\nSi el usuario asigna poses distintas (ej. Aldo-misionero-Nino, usuario-doggy-Miku), cada bloque respeta SU pose. No mezclar.`;
-    system += `\nSi el usuario solo actúa con algunas, las otras REACCIONAN con diálogo (celos, comentario). No las omitas.`;
-    system += `\nCorridas: respetá exactamente en quién y dónde dijo el usuario (espalda de Miku ≠ cara de Nino).`;
+    system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes (TODOS deben hablar): ${estado.chicasActivas.join(', ')}.`;
+    system += `\nOBLIGATORIO: un bloque [Nombre]: por CADA presente. Nadie desaparece del turno aunque el usuario no la nombre en el acto.`;
+    system += `\nSi el usuario solo actúa con algunas, las otras REACCIONAN (celos, mirar, comentar, tocarse, pedir turno). No las omitas.`;
+    system += `\nREGLA DE ROBO DE ESCENA: solo las nombradas en el acto describen la penetración/pose. Las demás no se inventan el mismo acto.`;
+    system += `\nEjemplo: usuario "standfuck a Nino y Miku" con Ichika presente → [Nino]: standfuck... [Miku]: standfuck... [Ichika]: *mira con celos/interés* reacciona sin desaparecer.`;
   }
 
   const intencion = resolverIntencionUsuario(mensajeUsuario);
