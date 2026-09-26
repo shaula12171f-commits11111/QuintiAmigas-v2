@@ -4,6 +4,18 @@ Cada entrada tiene fecha/hora y archivo de respaldo para poder volver atrás.
 
 ---
 
+## 2026-09-26 10:38:22 -0500 — Inventario looks solo por nombre de tag
+
+**Qué**
+- El inventario de cosplay/ropa se filtra **solo por el nombre del tag** (no por descripción).
+- Se excluyen tags de acto sexual aunque digan "ropa" (ej. `nino_chupa_pene_ropa_idol`).
+- Diálogo en natural: sin menú de nombres técnicos de tags.
+
+**Respaldo:** `respaldos/logica_20260926_103821.js`
+
+**Tipo:** filtro por nombre + instrucción de diálogo. Mejora real.
+
+
 ## 2026-09-26 10:28:01 -0500 — Inventario real cosplay/ropa (imagenes.js)
 
 **Qué**
