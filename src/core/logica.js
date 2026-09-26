@@ -439,7 +439,8 @@ function inferirEstadoRopaDesdeTag(tag) {
   if (/bikini|playa/.test(t)) return 'bikini';
   if (/tanga/.test(t)) return 'tanga';
   if (/lenceria|sujetador|selfie_lencer/.test(t)) return 'lenceria';
-  if (/ropa_|idol|vestido|yukata|elegante|sexy|modelo|cita|cosplay/.test(t)) return 'vestida';
+  if (/cosplay|uniforme|colegiala|disfraz/.test(t)) return 'cosplay';
+  if (/ropa_|idol|vestido|yukata|elegante|sexy|modelo|cita/.test(t)) return 'vestida';
   if (/mostrando_tetas|mostrando_culo|moviendo_el_culo/.test(t) && !/tanga/.test(t)) {
     // mostrando sin tanga suele ser desnuda o semi
     if (/sin_ropa|desnud/.test(t)) return 'desnuda';
@@ -524,6 +525,8 @@ function actualizarRopaDesdeMensajeUsuario(msg, chica) {
   } else if (/\b(lencer[ií]a|sujetador|encaje)\b/.test(t)) {
     nuevo = 'lenceria';
   } else if (/\b(vestida|con ropa|ponete la ropa|ponte la ropa|viste(te)?)\b/.test(t)) {
+  } else if (/\b(cosplay|disfraz|uniforme|colegiala)\b/.test(t) || /\b(pónganse|ponganse|ponte|ponete).{0,20}cosplay/.test(t)) {
+    nuevo = 'cosplay';
     nuevo = 'vestida';
   }
 
@@ -557,6 +560,9 @@ function tagIncompatibleConRopa(tag, ropaActual) {
   // Si tiene tanga: bikini completo no
   if (r === 'tanga' && /bikini_playa|ropa_idol|ropa_vestido/.test(t)) return true;
   if (r === 'bikini' && /ropa_idol|ropa_vestido|yukata/.test(t)) return true;
+  if (r === 'cosplay') {
+    if (/^desnuda$|post_sexo_desnuda/.test(t) && !/cosplay|quitandose/.test(t)) return true;
+  }
   return false;
 }
 
@@ -1485,6 +1491,8 @@ function construirContexto(mensajeUsuarioActual = '') {
     lineas.push(`Ropa actual de ${estado.chica}: ${ropa.actual}` + (ropa.anterior ? ` (antes: ${ropa.anterior})` : ''));
     if (ropa.actual === 'desnuda') {
       lineas.push('IMPORTANTE: Está DESNUDA. No digas que lleva tanga, bikini, vestido ni ropa. No inventes prendas.');
+    } else if (ropa.actual === 'cosplay') {
+      lineas.push('IMPORTANTE: Está en COSPLAY/disfraz. Describí el traje con detalle; no digas ropa de calle ni desnuda sin que el usuario lo pida.');
     }
   }
   if (estado.accionActual) {
@@ -2026,7 +2034,11 @@ Reglas estrictas (prioridad de arriba hacia abajo):
    - Si ella SOLO se posiciona, ofrece el cuerpo, invita ("acércate por detrás", "toma el control", "quiero que me tomes", se apoya en la cama, muestra el culo) PERO ni el usuario ni el texto describen penetración/follar/meter/chupar EN CURSO → NO elijas tags de penetración (doggystyle, misionero, standfuck, etc.).
    - En ese caso elegí el tag de la lista que mejor represente invitación, pose preparatoria, coqueteo o el más cercano NO penetrativo (según tags disponibles). Usá tu criterio según el texto.
    - Solo tags de penetración/oral activo si el acto YA está ocurriendo en el mensaje del usuario o en la respuesta como hecho consumado (la mete, folla, chupa, ritmo de embestidas, etc.).
-8) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa.
+7e) COSPLAY / CAMBIO DE LOOK (contextual):
+   - Si el usuario pide cosplay/disfraz/uniforme O la ROPA ACTUAL es "cosplay", priorizá tags de la lista que reflejen ese look (cosplay, uniforme, colegiala, idol, etc.) cuando el turno sea vestirse o mostrar el traje — evitá "hablando" si hay mejor opción visual.
+   - El tag exacto lo elegís según el texto (no hay un tag fijo obligatorio).
+   - Si ya hay sexo en curso con el cosplay puesto, podés elegir tag sexual; si solo se están poniendo el traje, priorizá el look.
+8) Respetá el estado de ropa: si está desnuda, NO elijas tags con tanga/bikini/ropa. Si está en cosplay, evitá desnuda total salvo que el acto lo pida.
 9) Respondé SOLO con el nombre exacto del tag, sin comillas, sin explicación, sin JSON, sin pensar en voz alta.`;
 
   const user = `CHICA: ${chica}
@@ -2719,7 +2731,18 @@ export async function enviarMensaje(mensajeUsuario) {
   actualizarFaseYLugar(mensajeUsuario);
 
   // Forzar estado de ropa desde lo que declara el usuario (ANTES de armar el prompt)
-  actualizarRopaDesdeMensajeUsuario(mensajeUsuario, estado.chica);
+  const msgRopaLow = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const ropaPlural = /\b(pónganse|ponganse|ponganse|vístanse|vistanse|todas)\b/.test(msgRopaLow)
+    || /cosplay/.test(msgRopaLow);
+  const targetsRopa = new Set();
+  if (estado.chica) targetsRopa.add(estado.chica);
+  if (ropaPlural) {
+    for (const c of (estado.chicasActivas || [])) targetsRopa.add(c);
+  }
+  for (const c of ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']) {
+    if (msgRopaLow.includes(c.toLowerCase())) targetsRopa.add(c);
+  }
+  for (const c of targetsRopa) actualizarRopaDesdeMensajeUsuario(mensajeUsuario, c);
 
   const soloMuestraUsuario = esSoloMuestra(mensajeUsuario);
   const escenaSex = !soloMuestraUsuario && (esEscenaSex() || PATRON_SEXO.test(mensajeUsuario));
