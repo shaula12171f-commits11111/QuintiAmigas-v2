@@ -15,6 +15,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  ESCENAS (agregá solo con URL real)
 // ---------------------------------------------------------------------------
 const ESCENAS = {
+  nino_ichika_nalgas_cubiertas_de_semen_De_pie: {
+    url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/parejas/nino_ichika_nalgas_cubiertas_de_semen_De_pie.jpg',
+    descripcion: 'sus  nalgas y culos estan cubiertos de semen',
+    audio: ''
+  },
+
   nino_ichika_nos_corremos_en_sus_culos_de_pie: {
     url: 'https://raw.githubusercontent.com/shaula12171f-commits11111/wwasaxccvbiquintidfar/main/parejas/nino_ichika_nos_corremos_en_sus_culos_de_pie.jpg',
     descripcion: 'nino_ichika_nos_corremos_en_sus_culos_de_pie',
