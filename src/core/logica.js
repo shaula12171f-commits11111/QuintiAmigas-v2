@@ -1348,6 +1348,26 @@ function normalizarEtiquetaRelacion(raw) {
 }
 
 /**
+ * Usuario propone noviazgo + ella acepta en el texto → novia (sin esperar solo a la IA).
+ */
+function detectarAceptacionNoviazgoLocal(mensajeUsuario, respuestaBot) {
+  const m = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const r = String(respuestaBot || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const propone =
+    /\b(seamos novios|seamos pareja|quiero que seamos novios|quieres ser mi novia|queres ser mi novia|sos mi novia|eres mi novia|ahora eres mi novia|formemos una relacion|hagamos de novios)\b/.test(m)
+    || (/\bnovios\b/.test(m) && /\b(seamos|quiero|claro)\b/.test(m));
+  if (!propone) return false;
+  const rechaza =
+    /\b(no quiero|no todavia|no|solo amigos|rechaz|ni loco|mejor no|no puedo)\b/.test(r)
+    && !/\b(si\b|acepto|me hace feliz|ser tu novia|soy tu novia|tu novio|mi novio)\b/.test(r);
+  if (rechaza) return false;
+  const acepta =
+    /\b(si\b|acepto|esta bien|dale|claro|por supuesto|me hace feliz|ser tu novia|soy tu novia|tu novia|mi novio|seamos novios|quiero ser|quiero descubrirlo|aceptar|que quieras ser mi novio)\b/.test(r)
+    || /\b(soy tu novia|tu novia)\b/.test(r);
+  return !!acepta;
+}
+
+/**
  * Relación híbrida: la IA interpreta el vínculo; la lógica valida saltos.
  * Novia solo si ella aceptó; no subir solo porque el usuario lo pidió.
  */
@@ -1360,6 +1380,21 @@ async function actualizarRelacionAutomatica(mensajeUsuario, respuestaBot) {
 
   if (principal && getRelacionChica(principal) === RELACION.DESCONOCIDA && estado.mensajesCount >= 3) {
     setRelacionChica(principal, RELACION.CONOCIDA);
+  }
+
+  // Aceptación local de noviazgo (ej. "seamos novios" + "¡Sí!" / "ser mi novio")
+  if (detectarAceptacionNoviazgoLocal(m, r)) {
+    const target =
+      detectarChicasEnTexto(m)[0] ||
+      principal;
+    if (target && getRelacionChica(target) !== RELACION.NOVIA) {
+      setRelacionChica(target, RELACION.NOVIA);
+      const hecho = `Relación con ${target} → novia (aceptó)`;
+      if (!(estado.hechos || []).includes(hecho)) {
+        estado.hechos = [...(estado.hechos || []), hecho].slice(-20);
+      }
+      log('Noviazgo LOCAL aceptado:', target);
+    }
   }
 
   const haySenal = /novia|novio|pareja|te amo|te quiero|sexfriend|amigos con derechos|solo sexo|relacion|relación|seamos|rechaz|no quiero|no todavía|no todavia|amigos\b|conocer|aldo|rompe|termin/i.test(mix)
@@ -1421,8 +1456,11 @@ JSON:`;
       if (!candidata) continue;
       const actual = getRelacionChica(ch);
       if (candidata === RELACION.NOVIA && (actual === RELACION.DESCONOCIDA || actual === RELACION.CONOCIDA)) {
-        if (!/\b(s[ií]|acepto|está bien|esta bien|seamos novios|novios)\b/i.test(r)) {
-          log('Novia bloqueada para', ch);
+        const rNorm = String(r || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+        const aceptoTexto = /\b(si|acepto|esta bien|dale|claro|por supuesto|me hace feliz|ser tu novia|soy tu novia|tu novia|mi novio|seamos novios|novios|quiero ser)\b/.test(rNorm)
+          || detectarAceptacionNoviazgoLocal(m, r);
+        if (!aceptoTexto) {
+          log('Novia bloqueada para', ch, '(sin aceptación en respuesta)');
           continue;
         }
       }
