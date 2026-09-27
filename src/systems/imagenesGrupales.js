@@ -17,6 +17,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  DUOS (2 chicas)
 // ---------------------------------------------------------------------------
 const DUOS = {
+  nino_miku_se_besan_entre_ellas: {
+    url: 'https://raw.githubusercontent.com/SORFAR123123/XDDDDDDDDDDDDDDDDDDDDXDXDXDXDXDXD20/main/imagenes/img_1773677005774.jpg',
+    descripcion: 'se besan entre ellas',
+    audio: ''
+  },
+
   nino_miku_meto_los_dedos_en_sus_conchas: {
     url: 'https://raw.githubusercontent.com/Sorrow12171/XDDDDDDDDDDDDDDDDDDDDXDXDXDXDXDXD75/main/imagenes/img_1788113449319.webp',
     descripcion: 'cada una levanta una levanta su propia pierna en el aire solo 1',
