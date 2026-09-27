@@ -6,13 +6,14 @@
 const REGLA_APARIENCIA = `
 APARIENCIA FIJA (INNEGOCIABLE — no cambia con ropa, cosplay ni "gyaru"):
 - Piel: blanca / clara en todas. NUNCA bronceada, morena o "piel gyaru".
-- Solo cambia la ROPA según el tag/descripción. Cabello, ojos y accesorios de identidad se mantienen.
-- Ichika: cabello corto bob rosa claro/pálido, mechón largo a un lado; arete en oreja derecha.
-- Nino: cabello rosa salmón/magenta (largo o a hombros según escena); dos cintas mariposa a los lados.
-- Miku: cabello medio-largo liso marrón/rojizo oscuro, mechones sobre la cara; auriculares azules (cuello). NUNCA rubia, platinada ni mechas rosas.
-- Yotsuba: cabello corto a la barbilla, naranja claro/pálido; cinta verde tipo orejas de conejo.
-- Itsuki: cabello medio-largo ondulado rojo/naranja rojizo, ahoge; dos pinzas estrella a los lados.
-PROHIBIDO teñir, cortar de forma canónica distinta o "transformar" el pelo por un outfit.
+- Ojos: las CINCO tienen ojos AZULES. Siempre. No los cambies de color.
+- Solo cambia la ROPA según el tag/descripción. Cabello, ojos azules y accesorios de identidad se mantienen.
+- Ichika: cabello corto bob rosa claro/pálido, mechón largo a un lado; arete en oreja derecha; ojos azules.
+- Nino: cabello rosa salmón/magenta (largo o a hombros según escena); dos cintas mariposa a los lados; ojos azules.
+- Miku: cabello medio-largo liso marrón/rojizo oscuro, mechones sobre la cara; auriculares azules (cuello); ojos azules. NUNCA rubia, platinada ni mechas rosas.
+- Yotsuba: cabello corto a la barbilla, naranja claro/pálido; cinta verde tipo orejas de conejo; ojos azules.
+- Itsuki: cabello medio-largo ondulado rojo/naranja rojizo, ahoge; dos pinzas estrella a los lados; ojos azules.
+PROHIBIDO teñir, cambiar color de ojos, o "transformar" el pelo por un outfit.
 `;
 
 const REGLA_GENERO = `
