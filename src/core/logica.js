@@ -2661,6 +2661,7 @@ async function rearmarTextoSegunTag(chica, textoOriginal, tag, mensajeUsuario, d
     '1) Mantené la personalidad de ' + chica + ' y el sentido del mensaje del usuario.',
     '2) Si hay DESCRIPCIÓN VISUAL, esa es la VERDAD de lo que se ve: la ropa/pose DEBEN coincidir con ella.',
     'PROHIBIDO inventar otra indumentaria (ej. denim/medias de red si la descripción dice bikini y camisa abierta).',
+    'PROHIBIDO cambiar cabello, color de pelo, piel o ojos canónicos: Miku sigue marrón/rojiza y piel blanca (no rubia/bronceada); Nino rosa con cintas; etc. Solo cambia la ROPA del tag.',
     '3) Incorporá la descripción de forma NATURAL (no copies el nombre del tag).',
     '4) NO contradigas al usuario ni inventes otra escena sexual distinta.',
     '5) NO alargues mucho: mismo largo o un poco más.',
@@ -3162,6 +3163,8 @@ system += '\n## FORMATO DE BLOQUES\n';
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
     system += '\n## ROPA / TAGS DE OUTFIT\n';
+  system += 'APARIENCIA FIJA: piel blanca; Miku cabello marrón/rojizo + auriculares azules (nunca rubia/bronceada); Nino rosa + cintas mariposa; Ichika bob rosa + arete; Yotsuba naranja + cinta verde; Itsuki rojo + pinzas estrella. Solo cambia la ropa del tag.\n';
+
   system += 'Si el usuario pide un look (gyaru, bikini, idol, cosplay) y existe en el catálogo, la narración de ropa DEBE coincidir con la descripción del tag de ese look. NO inventes otra ropa genérica.\n';
 system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
   system += 'Escribí en PROSA NARRATIVA densa: mínimo 2–4 párrafos por personaje activo; más si el usuario da libertad, cambia de día/lugar o pide que continúes. ';
