@@ -225,7 +225,7 @@ function detectarDondeCorrida(texto) {
   const t = String(texto || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   if (/dentro\s+(de\s+)?(su\s+)?(culo|ano)|en\s+(el\s+)?culo|anal\s+dentro|creampie\s+anal/.test(t)) return 'dentro_anal';
   if (/dentro|adentro|creampie|en\s+(su\s+)?(concha|coño|vagina|interior)|llen[oa]\s+(de\s+)?(semen|leche)/.test(t)) return 'dentro_vagina';
-  if (/en\s+(la\s+|su\s+)?cara|facial|sobre\s+(la\s+)?cara|rostro/.test(t)) return 'cara';
+  if (/en\s+(la\s+|su\s+|las\s+|sus\s+)?cara|facial|sobre\s+(la\s+|las\s+)?cara|rostro/.test(t)) return 'cara';
   if (/en\s+(la\s+|su\s+)?boca|trag|oral\s+cum|leche\s+en\s+la\s+boca/.test(t)) return 'boca';
   if (/en\s+(las\s+|sus\s+)?tetas|pecho|entre\s+(las\s+)?tetas|paizuri/.test(t)) return 'pecho';
   if (/en\s+(el\s+|su\s+)?cuerpo|sobre\s+(el\s+)?cuerpo|barriga|espalda|nalgas/.test(t)) return 'cuerpo';
@@ -1587,6 +1587,7 @@ function construirContexto(mensajeUsuarioActual = '') {
     'GÉNERO: PROHIBIDO que la chica hable como si tuviera pija o testículos. Las bolas/pija son del usuario.',
     'POSESIÓN: ella dice "no soy tuya" / "no me haces tuya", NUNCA "no me hace mía" (ella no es dueña masculina de sí en ese sentido).',
     'CORRIDAS: si A se corre en la cara de B, el semen queda en B, no en la cara de A. Aldo no describe semen en su propia cara si eyaculó sobre una chica.',
+    'GÉNERO CORRIDA: las chicas (Nino, Miku, etc.) NO eyaculan semen ni se corren en la cara de otra. Si "sus novios se corren en sus caras", el semen es de los novios (hombres) sobre Nino/Miku.',
     `Chica principal: ${estado.chica}`,
     `Presentes: ${estado.chicasActivas.join(', ')}`
   ];
@@ -2381,7 +2382,7 @@ function accionesClaveMensaje(msg) {
   if (/\bmision|misionero\b/.test(t)) keys.push('misionero');
   if (/\bcowgirl|vaquera\b/.test(t)) keys.push('cowgirl');
   if (/\b(nos\s+corremos|me\s+corro|se\s+corren|corremos\s+dentro|dentro\s+de\s+ellas|creampie|llen[oa])\b/.test(t)) keys.push('corrida');
-  if (/\b(cara|facial|rostro)\b/.test(t)) keys.push('facial');
+  if (/\b(cara|caras|facial|faciales|rostro|rostros)\b/.test(t)) keys.push('facial');
   return keys;
 }
 
@@ -2389,10 +2390,11 @@ function accionesClaveMensaje(msg) {
 function zonasClaveMensaje(msg) {
   const t = String(msg || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   const z = [];
-  if (/\b(cara|facial|rostro)\b/.test(t)) z.push('cara');
-  if (/\b(boca|trag)\b/.test(t)) z.push('boca');
+  // caras/faciales (plural) también cuenta
+  if (/\b(cara|caras|facial|faciales|rostro|rostros)\b/.test(t)) z.push('cara');
+  if (/\b(boca|bocas|trag)\b/.test(t)) z.push('boca');
   if (/\b(pecho|tetas)\b/.test(t)) z.push('pecho');
-  if (/\b(dentro|adentro|creampie|concha|co[nñ]o|llen[oa])\b/.test(t) && !/\b(cara|facial)\b/.test(t)) z.push('dentro');
+  if (/\b(dentro|adentro|creampie|concha|co[nñ]o|llen[oa])\b/.test(t) && !/\b(cara|caras|facial|faciales)\b/.test(t)) z.push('dentro');
   return z;
 }
 
@@ -2706,7 +2708,7 @@ Debés elegir UN tag de la lista que represente TODA la escena, o "ninguno".
 Reglas:
 1) SOLO un tag exacto de la lista, o la palabra ninguno.
 2) El tag debe cubrir las acciones del mensaje. Si no, ninguno.
-3) ZONA: si el usuario dice cara/facial, PROHIBIDO tags de concha/dentro/se_derrama_semen_de_sus_conchas. Sin tag de zona correcta → ninguno.
+3) ZONA: si el usuario dice cara/caras/facial, PROHIBIDO tags de concha/dentro/se_derrama_semen_de_sus_conchas. Sin tag de zona correcta → ninguno.
 4) Corridas distintas en caras distintas sin tag de doble facial → ninguno (mejor individuales).
 5) NO reutilices un trío viejo solo por los nombres.
 6) Si NINGÚN tag cubre escena+zona, respondé: ninguno.
