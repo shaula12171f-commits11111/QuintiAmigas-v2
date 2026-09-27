@@ -2381,7 +2381,32 @@ function accionesClaveMensaje(msg) {
   if (/\bmision|misionero\b/.test(t)) keys.push('misionero');
   if (/\bcowgirl|vaquera\b/.test(t)) keys.push('cowgirl');
   if (/\b(nos\s+corremos|me\s+corro|se\s+corren|corremos\s+dentro|dentro\s+de\s+ellas|creampie|llen[oa])\b/.test(t)) keys.push('corrida');
+  if (/\b(cara|facial|rostro)\b/.test(t)) keys.push('facial');
   return keys;
+}
+
+/** Zonas de cuerpo/corrida en el mensaje (cara ≠ concha). */
+function zonasClaveMensaje(msg) {
+  const t = String(msg || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  const z = [];
+  if (/\b(cara|facial|rostro)\b/.test(t)) z.push('cara');
+  if (/\b(boca|trag)\b/.test(t)) z.push('boca');
+  if (/\b(pecho|tetas)\b/.test(t)) z.push('pecho');
+  if (/\b(dentro|adentro|creampie|concha|co[nñ]o|llen[oa])\b/.test(t) && !/\b(cara|facial)\b/.test(t)) z.push('dentro');
+  return z;
+}
+
+/** Tag compartido choca con la zona del mensaje (ej. cara vs se_derrama_…_conchas). */
+function tagIncompatibleConZonasMensaje(tag, mensajeUsuario) {
+  const tl = String(tag || '').toLowerCase();
+  const zonas = zonasClaveMensaje(mensajeUsuario);
+  if (!zonas.length) return false;
+  const tagCara = /cara|facial|rostro/.test(tl);
+  const tagConcha = /concha|co[nñ]o|dentro|creampie|derrama|semen_de_sus_conchas|se_derrama/.test(tl);
+  if (zonas.includes('cara') && !zonas.includes('dentro') && tagConcha && !tagCara) return true;
+  if (zonas.includes('cara') && !zonas.includes('dentro') && /semen|corr|cum|creampie|derrama/.test(tl) && !tagCara) return true;
+  if (zonas.includes('dentro') && tagCara && !tagConcha) return true;
+  return false;
 }
 
 function chicasEnTagNombre(tag) {
@@ -2458,6 +2483,7 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
     // Tag de corrida/dentro solo si el mensaje habla de corrida
     const msgQuiereCorrida = /\b(nos\s+corremos|me\s+corro|se\s+corren|corremos\s+dentro|dentro\s+de\s+ellas|creampie)\b/.test(msg);
     if (!msgQuiereCorrida && /se_corren|corren_dentro|creampie|_dentro_de_ellas|_se_corren/.test(tl)) return false;
+    if (tagIncompatibleConZonasMensaje(tl, mensajeUsuario)) return false;
     // Parejas cruzadas: evitar tags tipo "mientras meto dedos a miku y ichika"
     if (esParejasCruzadasOParalelas(mensajeUsuario) && /mientras|dedo|miku/.test(tl) && !/aldo/.test(tl)) {
       return false;
@@ -2488,8 +2514,9 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
       if (a === 'corrida' && /corren|corro|dentro|creampie|semen/.test(tl)) score += 22;
     }
     // Si piden corrida y el tag NO la tiene → bajar (preferir se_corren_dentro)
-    if (accionesMsg.includes('corrida') && !/corren|corro|dentro|creampie|semen/.test(tl)) score -= 25;
-    // Si NO piden corrida, NO usar tags de "se corren / dentro / creampie" (solo pose base)
+    if (accionesMsg.includes('corrida') && !/corren|corro|dentro|creampie|semen|cara|facial/.test(tl)) score -= 25;
+    if (accionesMsg.includes('facial') && /cara|facial|rostro/.test(tl)) score += 28;
+    if (accionesMsg.includes('facial') && /concha|derrama|semen_de_sus_conchas/.test(tl)) score -= 50;
     if (!accionesMsg.includes('corrida') && /se_corren|corren_dentro|creampie|_dentro_de_/.test(tl)) {
       score -= 45;
     }
@@ -2660,7 +2687,15 @@ async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []
     return getGrupalPorTag(local.tag) || getParejaPorTag(local.tag) || getMultiHombresPorTag(local.tag) || local;
   }
 
-  const lista = disponibles.map((e) => e.tag).join(', ');
+  const disponiblesZona = disponibles.filter((e) => !tagIncompatibleConZonasMensaje(e.tag, msg));
+  if (disponiblesZona.length < disponibles.length) {
+    log('Compartida: filtrados por zona', disponibles.length - disponiblesZona.length);
+  }
+  if (!disponiblesZona.length) {
+    log('Compartida: sin tags compatibles de zona → individuales');
+    return null;
+  }
+  const lista = disponiblesZona.map((e) => e.tag).join(', ');
 
   const system = `Sos un selector de IMAGEN DE ESCENA compartida para roleplay erótico multi.
 El usuario describe una escena con VARIAS personas. Hay tags ya cargados.
@@ -2670,11 +2705,12 @@ Debés elegir UN tag de la lista que represente TODA la escena, o "ninguno".
 
 Reglas:
 1) SOLO un tag exacto de la lista, o la palabra ninguno.
-2) El tag debe cubrir TODAS las acciones distintas del mensaje (ej. standfuck + dedos + anal). Si el tag es doggy+dedos pero el usuario pidió standfuck y anal, respondé: ninguno.
-3) NO reutilices un trío viejo solo porque coinciden los nombres.
-4) Si es TRIO, preferí tags que nombren a ESAS chicas y LAS acciones correctas.
-5) Si NINGÚN tag cubre la escena completa, respondé: ninguno (mejor individuales que imagen incorrecta).
-6) NO inventes tags. SOLO el tag o ninguno.`;
+2) El tag debe cubrir las acciones del mensaje. Si no, ninguno.
+3) ZONA: si el usuario dice cara/facial, PROHIBIDO tags de concha/dentro/se_derrama_semen_de_sus_conchas. Sin tag de zona correcta → ninguno.
+4) Corridas distintas en caras distintas sin tag de doble facial → ninguno (mejor individuales).
+5) NO reutilices un trío viejo solo por los nombres.
+6) Si NINGÚN tag cubre escena+zona, respondé: ninguno.
+7) NO inventes tags. SOLO el tag o ninguno.`;
 
   const user = `MENSAJE DEL USUARIO:
 """${msg.slice(0, 900)}"""
