@@ -62,7 +62,27 @@ function actualizarMeta(r) {
   if ($('chat-who')) $('chat-who').textContent = a;
 }
 function fmtText(t) {
-  return String(t || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\*([^*]+)\*/g,'<em>*$1*</em>');
+  let s = String(t || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // 1) Diálogo con raya — o -- (línea o tras puntuación)
+  s = s.replace(/(^|[\n\r])[ \t]*(?:—|–|--)[ \t]*/g, '$1\u0001DLG\u0002');
+  s = s.replace(/([.!?…])[ \t]*(?:—|–|--)[ \t]*/g, '$1 \u0001DLG\u0002');
+  // 2) «diálogo»
+  s = s.replace(/«([^»]+)»/g, '\u0001DLG\u0002«$1»\u0001\/DLG\u0002');
+  // 3) *narración*
+  s = s.replace(/\*([^*]+)\*/g, '\u0001NARR\u0002$1\u0001\/NARR\u0002');
+  // Cerrar diálogos de raya hasta fin de línea
+  s = s.replace(/\u0001DLG\u0002([^\n\r\u0001]*)/g, function (_, rest) {
+    if (rest.startsWith('«')) return '\u0001DLG\u0002' + rest; // already handled
+    return '<span class="rp-dlg">— ' + rest.trim() + '</span>';
+  });
+  s = s.replace(/\u0001DLG\u0002«/g, '<span class="rp-dlg">«');
+  s = s.replace(/\u0001\/DLG\u0002/g, '</span>');
+  s = s.replace(/\u0001NARR\u0002/g, '<span class="rp-narr">');
+  s = s.replace(/\u0001\/NARR\u0002/g, '</span>');
+  return s;
 }
 function addUser(text) {
   const el = document.createElement('div'); el.className = 'msg user'; el.textContent = text;
