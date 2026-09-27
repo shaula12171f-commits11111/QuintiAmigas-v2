@@ -2635,37 +2635,48 @@ function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
 
 
 
-/** Tags “fuertes”: vale la pena alinear el texto con la imagen. */
-function tagPideRearme(tag) {
+/** Tags "fuertes": vale la pena alinear el texto con la imagen. */
+function tagPideRearme(tag, descripcion = '') {
   const t = String(tag || '').toLowerCase();
   if (!t || t === 'hablando' || t === 'normal') return false;
-  if (/enojada|alegre|triste|sonrojada|timida|seria|feliz|riendo|coqueta|nerviosa/.test(t) && !/foll|chup|mam|corro|semen|dedo|doggy|mision|cowgirl|anal|handjob|paja/.test(t)) {
+  if (/ropa_|cosplay_|uniforme_|idol|gyaru|bikini|outfit|vestid|disfraz/.test(t)) return true;
+  if (String(descripcion || '').trim().length > 8 && /ropa_|cosplay_|bikini|gyaru|uniforme/.test(t)) return true;
+  if (/enojada|alegre|triste|sonrojada|timida|seria|feliz|riendo|coqueta|nerviosa/.test(t) && !/foll|chup|mam|corro|semen|dedo|doggy|mision|cowgirl|anal|handjob|paja|ropa|cosplay|bikini/.test(t)) {
     return false;
   }
   return true;
 }
 
-async function rearmarTextoSegunTag(chica, textoOriginal, tag, mensajeUsuario) {
-  if (!tagPideRearme(tag)) return textoOriginal;
+async function rearmarTextoSegunTag(chica, textoOriginal, tag, mensajeUsuario, descripcionImg = '') {
+  const desc = String(descripcionImg || '').trim();
+  if (!tagPideRearme(tag, desc)) return textoOriginal;
   const texto = String(textoOriginal || '').trim();
   if (texto.length < 20) return textoOriginal;
 
-  const system = `Ajustás un párrafo de roleplay erótico para que coincida con el TAG de imagen.
-Reglas:
-1) Mantené la personalidad de ${chica} y el sentido del texto.
-2) Incorporá de forma NATURAL lo que implica el tag (sin listar el nombre del tag).
-3) NO contradigas al usuario ni inventes otra escena.
-4) NO alargues mucho: mismo largo o un poco más.
-5) PROHIBIDO frases telegráficas ("La pija. Ahora.", "Es mía." sueltos). Oraciones naturales; variá el tono.
-6) Respondé SOLO el párrafo final, sin explicaciones.`;
+  const esRopa = /ropa_|cosplay_|uniforme_|idol|gyaru|bikini|outfit|vestid|disfraz/.test(String(tag || '').toLowerCase());
 
-  const user = `CHICA: ${chica}
-TAG DE IMAGEN: ${tag}
-MENSAJE DEL USUARIO: """${String(mensajeUsuario || '').slice(0, 400)}"""
-TEXTO ACTUAL:
-"""${texto.slice(0, 1200)}"""
+  const system = [
+    'Ajustás un párrafo de roleplay erótico para que coincida con la IMAGEN (tag + descripción visual).',
+    'Reglas OBLIGATORIAS:',
+    '1) Mantené la personalidad de ' + chica + ' y el sentido del mensaje del usuario.',
+    '2) Si hay DESCRIPCIÓN VISUAL, esa es la VERDAD de lo que se ve: la ropa/pose DEBEN coincidir con ella.',
+    'PROHIBIDO inventar otra indumentaria (ej. denim/medias de red si la descripción dice bikini y camisa abierta).',
+    '3) Incorporá la descripción de forma NATURAL (no copies el nombre del tag).',
+    '4) NO contradigas al usuario ni inventes otra escena sexual distinta.',
+    '5) NO alargues mucho: mismo largo o un poco más.',
+    '6) Respondé SOLO el párrafo final.'
+  ].join('\n');
 
-Reescribí el texto alineado al tag:`;
+  const user = [
+    'CHICA: ' + chica,
+    'TAG DE IMAGEN: ' + tag,
+    'DESCRIPCIÓN VISUAL (OBLIGATORIA' + (esRopa ? ' — ropa/outfit' : '') + '): """' + (desc || '(sin descripción; usá solo el tag)') + '"""',
+    'MENSAJE DEL USUARIO: """' + String(mensajeUsuario || '').slice(0, 400) + '"""',
+    'TEXTO ACTUAL:',
+    '"""' + texto.slice(0, 1200) + '"""',
+    '',
+    'Reescribí el texto alineado a la descripción visual y al tag:'
+  ].join('\n');
 
   try {
     const raw = await llamarGroq(
@@ -3150,7 +3161,9 @@ system += '\n## FORMATO DE BLOQUES\n';
   if (estado.accionActual) {
     system += `Acción previa en curso: ${estado.accionActual}. Si el usuario cambia de acción, transicioná desde ahí; no borres lo que estabas haciendo.\n`;
   }
-  system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
+    system += '\n## ROPA / TAGS DE OUTFIT\n';
+  system += 'Si el usuario pide un look (gyaru, bikini, idol, cosplay) y existe en el catálogo, la narración de ropa DEBE coincidir con la descripción del tag de ese look. NO inventes otra ropa genérica.\n';
+system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
   system += 'Escribí en PROSA NARRATIVA densa: mínimo 2–4 párrafos por personaje activo; más si el usuario da libertad, cambia de día/lugar o pide que continúes. ';
   system += 'Incluí lugar, luz, ropa/cuerpo, gestos, silencios, miradas y diálogo natural. Suena a ficción erótica bien escrita, no a chat corto. ';
   system += 'Si el usuario avanza el tiempo (mañana, oficina, fiesta, una semana), narrá el salto de escena con claridad. ';
@@ -3386,7 +3399,7 @@ system += '\n## FORMATO DE BLOQUES\n';
     // Alinear texto con el tag de imagen (inmersión)
     let textoFinal = b.texto;
     try {
-      textoFinal = await rearmarTextoSegunTag(b.chica, b.texto, media.tag || tagFinal, mensajeUsuario);
+      textoFinal = await rearmarTextoSegunTag(b.chica, b.texto, media.tag || tagFinal, mensajeUsuario, media.descripcion || '');
     } catch (_) {}
 
     // Guardar pose por chica (nunca tags meta porno/cámara salvo que el mensaje lo pida)
