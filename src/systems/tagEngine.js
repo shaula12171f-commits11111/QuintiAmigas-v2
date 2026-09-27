@@ -1,6 +1,7 @@
 // ============================================================
 //  tagEngine.js — Sistema de tags estilo Nakardas (port a v2)
 //  Prioridad: tags-reales > usuario-keywords > continuidad > bot > modelo
+//  FIX 2026-09-26: matching robusto agarro/agarra culo (Ichika + Nino)
 // ============================================================
 
 import {
@@ -22,7 +23,8 @@ const UMBRAL = 10;
 const TOKENS_GENERICOS = new Set([
   'el', 'la', 'los', 'las', 'de', 'del', 'en', 'a', 'al', 'un', 'una',
   'su', 'mi', 'tu', 'me', 'te', 'le', 'lo', 'se', 'y', 'o', 'con',
-  'todo', 'solo', 'mientras', 'para', 'por', 'que', 'es', 'esta'
+  'todo', 'solo', 'mientras', 'para', 'por', 'que', 'es', 'esta',
+  'usuario' // prefijo usuario_ no debe penalizar cobertura
 ]);
 
 // Sinónimos para tokens de tags (mensaje ↔ nombre de tag)
@@ -53,8 +55,10 @@ const SINONIMOS_TOKEN = {
   cowgirl: ['cowgirl', 'montando', 'cabalgando', 'encima'],
   anal: ['anal', 'ano', 'culo'],
   nalguea: ['nalguea', 'nalgueo', 'nalgue', 'nalga', 'cachetada', 'azote'],
-  agarra: ['agarra', 'agarro', 'agarrando', 'aprieta', 'aprieto', 'manoseo'],
-  culo: ['culo', 'nalga', 'nalgas', 'trasero'],
+  agarra: ['agarra', 'agarro', 'agarrando', 'aprieta', 'aprieto', 'manoseo', 'manosea', 'toco', 'tocando'],
+  agarro: ['agarra', 'agarro', 'agarrando', 'aprieta', 'aprieto', 'manoseo', 'manosea', 'toco', 'tocando'],
+  agarrando: ['agarra', 'agarro', 'agarrando', 'aprieta', 'aprieto', 'manoseo'],
+  culo: ['culo', 'nalga', 'nalgas', 'trasero', 'ass'],
   desnuda: ['desnuda', 'desnudate', 'sin ropa'],
   besando: ['besando', 'beso', 'besame', 'besar'],
   handjob: ['handjob', 'paja', 'jalo'],
@@ -89,7 +93,7 @@ const PATRONES_ASTERISCO = [
   { re: /\*[^*]*(?:desnud|sin ropa)[^*]*\*/gi, tag: 'desnuda', peso: PESOS.VERBO },
   { re: /\*[^*]*(?:mostrando|ense[nñ]a)[^*]*(?:culo|nalga|tanga)[^*]*\*/gi, tag: 'mostrando_culo_tanga', peso: PESOS.VERBO },
   { re: /\*[^*]*(?:muestro|muestra)[^*]*(?:verga|pija|polla|pene)[^*]*\*/gi, tag: 'usuario_muestra_su_verga', peso: PESOS.VERBO },
-  { re: /\*[^*]*(?:agarr[oóa]|apret[oóa]|manose)[^*]*(?:culo|nalga)[^*]*\*/gi, tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
+  { re: /\*[^*]*(?:agarr[oóa]|apret[oóa]|manose|toc[oóa])[^*]*(?:culo|nalga)[^*]*\*/gi, tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
   { re: /\*[^*]*(?:nalgue|nalga|cachetad|azote|pego)[^*]*(?:culo|nalga)[^*]*\*/gi, tag: 'usuario_nalguea_el_culo', peso: PESOS.VERBO },
   { re: /\*[^*]*(?:culo|nalga)[^*]*(?:nalgue|cachetad|azote)[^*]*\*/gi, tag: 'usuario_nalguea_el_culo', peso: PESOS.VERBO }
 ];
@@ -115,8 +119,13 @@ const PALABRAS_CLAVE = [
   { palabras: ['desnudate', 'desnúdate', 'desnuda', 'sin ropa', 'quitate la ropa'], tag: 'desnuda', peso: PESOS.VERBO },
   { palabras: ['muestra el culo', 'mostrame el culo', 'enseña el culo', 'da la vuelta'], tag: 'mostrando_culo_tanga', peso: PESOS.VERBO },
   { palabras: ['te muestro', 'muestro mi', 'saco la pija', 'saco la verga', 'mira mi verga', 'mira mi pija'], tag: 'usuario_muestra_su_verga', peso: PESOS.VERBO },
-  { palabras: ['agarra el culo', 'agarrame el culo', 'aprieta el culo', 'le agarro el culo', 'le agarra el culo', 'agarro el culo', 'agarrando el culo', 'le aprieto el culo', 'manoseo el culo', 'le manoseo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
-  { palabras: ['agarro', 'agarrando', 'aprieto', 'manoseo'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
+  { palabras: [
+    'agarra el culo', 'agarrame el culo', 'aprieta el culo', 'le agarro el culo', 'le agarra el culo',
+    'agarro el culo', 'agarrando el culo', 'le aprieto el culo', 'manoseo el culo', 'le manoseo',
+    'agarro el culo a', 'agarro el culo de', 'agarra el culo a', 'agarra el culo de',
+    'toco el culo', 'le toco el culo', 'aprieto las nalgas', 'agarro las nalgas'
+  ], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
+  { palabras: ['agarro', 'agarrando', 'aprieto', 'manoseo', 'agarra'], tag: 'usuario_agarra_el_culo', peso: PESOS.VERBO },
   { palabras: [
     'nalguea', 'nalgueame', 'nalgueo', 'nalgue', 'nalga', 'nalgas',
     'azote en el culo', 'cachetada en el culo', 'cachetada', 'azote',
@@ -199,6 +208,10 @@ export function matchContraTagsReales(mensaje, tagsDisponibles) {
   const msgNorm = norm(mensaje).replace(/_/g, ' ');
   const msgCompact = msgNorm.replace(/\s+/g, '');
 
+  // Señal fuerte de "agarrar culo" (Ichika, Nino, etc.)
+  const quiereAgarrarCulo = /agarr[oa]|apriet|manose|toc[oa].*culo|culo.*toc/.test(msgNorm) &&
+                            /culo|nalga|trasero/.test(msgNorm);
+
   let best = null;
   let bestScore = 0;
   const candidatos = [];
@@ -233,7 +246,7 @@ export function matchContraTagsReales(mensaje, tagsDisponibles) {
       if (tokenApareceEnMensaje(tok, msgNorm)) {
         hits++;
         // Tokens distintivos (largos / no genéricos de acción básica) valen más
-        const esDistintivo = tok.length >= 5 || ['cabello', 'pelo', 'coleta', 'jalo', 'jalar', 'empujando', 'empujandola', 'nalguea', 'agarra'].includes(tok);
+        const esDistintivo = tok.length >= 5 || ['cabello', 'pelo', 'coleta', 'jalo', 'jalar', 'empujando', 'empujandola', 'nalguea', 'agarra', 'agarro', 'culo'].includes(tok);
         const w = esDistintivo ? 12 : 5;
         pesoHits += w;
         matched.push(tok);
@@ -263,6 +276,13 @@ export function matchContraTagsReales(mensaje, tagsDisponibles) {
       score += 20;
     }
 
+    // FIX: boost fuerte si el tag es de agarrar culo y el mensaje lo pide
+    const esTagAgarrarCulo = /agarra?_?el_?culo|agarro_?el_?culo|usuario_agarra_el_culo/.test(tagNorm);
+    if (quiereAgarrarCulo && esTagAgarrarCulo) {
+      score += 40;
+      matched.push('+boost_agarra_culo');
+    }
+
     candidatos.push({ tag, score, tipo: 'tokens', hits, cobertura: cobertura.toFixed(2), matched });
 
     if (score > bestScore) {
@@ -275,8 +295,8 @@ export function matchContraTagsReales(mensaje, tagsDisponibles) {
     }
   }
 
-  // Umbral mínimo para aceptar match por tokens (exacto siempre pasa)
-  const UMBRAL_TOKENS = 18;
+  // Umbral mínimo (más bajo si hay señal clara de agarrar culo)
+  const UMBRAL_TOKENS = quiereAgarrarCulo ? 12 : 18;
   if (!best || (best.detalle !== 'exacto' && best.puntuacion < UMBRAL_TOKENS)) {
     return { tag: null, puntuacion: best?.puntuacion || 0, detalle: null, candidatos: candidatos.sort((a, b) => b.score - a.score).slice(0, 5) };
   }
@@ -458,6 +478,7 @@ function extraerSenales(texto) {
     quiereOral: /chup|mam[ao]|oral|lam[ei]|blowjob|deepthroat/.test(t),
     quierePenetracion: /foll|cog|penetr|meto|metela|doggy|mision|cowgirl|anal/.test(t),
     quiereAssjob: /assjob|entre (las )?nalgas|frot.*culo|pija.*culo|verga.*culo/.test(t),
+    quiereAgarrarCulo: /agarr[oa].*culo|culo.*agarr|apriet.*culo|manose.*culo|toc[oa].*culo/.test(t),
     mencionaRopa: /tanga|bikini|ropa|vestid|pantal|falda|sujetador|lencer/.test(t)
   };
 }
@@ -516,6 +537,10 @@ function scoreTagDinamicoContraTexto(tag, senales, textoNorm, accionAnterior) {
   if (senales.quiereAssjob && /assjob|culo.*job|entre.*nalga|frot.*culo/.test(t)) {
     score += 20;
     detalles.push('+assjob');
+  }
+  if (senales.quiereAgarrarCulo && /agarra?_?el_?culo|agarro_?el_?culo|usuario_agarra_el_culo/.test(t)) {
+    score += 25;
+    detalles.push('+agarra_culo');
   }
 
   // 3. Continuidad
@@ -605,6 +630,19 @@ function elegirTagDinamico({
         };
       }
     }
+    // FIX: fallback directo para agarrar culo (Ichika / Nino)
+    if (senales.quiereAgarrarCulo) {
+      const agarr = tags.find(t => /agarra?_?el_?culo|agarro_?el_?culo|usuario_agarra_el_culo/.test(t) && !/NOSEX/i.test(t));
+      if (agarr) {
+        return {
+          tag: agarr,
+          razon: `dinamico:fallback_agarra_culo`,
+          puntuacion: 18,
+          fuente: 'dinamico',
+          candidatos: scored.slice(0, 5)
+        };
+      }
+    }
     return {
       tag: tags.includes('hablando') ? 'hablando' : tags[0],
       razon: `dinamico:fallback(score_bajo)`,
@@ -654,7 +692,7 @@ export function resolverTagEscena({
   // ─── Fallback: match exacto contra tags reales (legacy) ───
   const tags = tagsDe(chica, soloNoSex);
   const realMatch = matchContraTagsReales(mensajeUsuario + ' ' + textoBot, tags);
-  if (realMatch.tag && realMatch.tag !== 'hablando' && realMatch.puntuacion >= 18) {
+  if (realMatch.tag && realMatch.tag !== 'hablando' && realMatch.puntuacion >= 12) {
     return {
       tag: realMatch.tag,
       razon: `tags-reales:${realMatch.detalle}(${Math.round(realMatch.puntuacion)})`,
