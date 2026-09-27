@@ -1623,7 +1623,8 @@ function obtenerMensajesRecientesParaIA(n = ULTIMOS_MENSAJES_CONTEXTO) {
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && String(m.content || '').trim())
     .map((m) => ({
       role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: String(m.content || '').slice(0, 2000) // tope por mensaje por tokens
+      // Tope bajo: evita 413 TPM (~8000). El detalle largo vive en el resumen.
+      content: String(m.content || '').slice(0, 700)
     }));
 }
 
@@ -1682,7 +1683,8 @@ function construirContexto(mensajeUsuarioActual = '') {
   ];
   if (estado.resumenConversacion && estado.resumenConversacion.trim()) {
     lineas.push('### MAPA DE ESCENA / RESUMEN (memoria; no contradigas hechos ni borres la acción en curso por un evento de celular)');
-    lineas.push(estado.resumenConversacion.trim());
+    // Cap duro: resúmenes largos + system + recientes → 413 TPM
+    lineas.push(estado.resumenConversacion.trim().slice(0, 1600));
   }
   // Ritmo según relación (desconocidos ≠ sexfriends ≠ novios)
   try {
@@ -1711,7 +1713,7 @@ function construirContexto(mensajeUsuarioActual = '') {
   }
   if (estado.hechos.length) {
     lineas.push('### HECHOS_FIJOS (no olvidar ni contradecir; si preguntan la posición u otros detalles, usá ESTO):');
-    lineas.push(estado.hechos.slice(-16).map((h) => '- ' + h).join('\n'));
+    lineas.push(estado.hechos.slice(-10).map((h) => '- ' + h).join('\n'));
   }
   const bloqueCorridas = typeof textoCorridasParaContexto === 'function' ? textoCorridasParaContexto() : '';
   if (bloqueCorridas) {
@@ -2996,7 +2998,30 @@ Si el usuario pregunta qué posición usaron, la respuesta debe basarse en HECHO
     );
     const limpio = String(raw || '').trim();
     if (limpio && limpio.length > 30) {
-      estado.resumenConversacion = limpio.slice(0, 3200);
+      // Forzar ROPA_VISUAL desde estado real si el modelo inventa
+      let mapa = limpio.slice(0, 2800);
+      const ropaReal = [];
+      for (const c of [...new Set([...(estado.chicasActivas || []), estado.chica].filter(Boolean))]) {
+        if (c === 'Aldo') continue;
+        try {
+          const r = getRopaChica(c);
+          if (r && r.actual && r.actual !== 'normal') ropaReal.push(c + ': ' + r.actual);
+        } catch (_) {}
+      }
+      if (estado.outfitActual && estado.outfitActual.descripcion) {
+        const who = estado.outfitActual.chica || estado.chica || '';
+        const line = (who ? who + ': ' : '') + estado.outfitActual.descripcion;
+        if (!ropaReal.some((x) => x.includes(estado.outfitActual.descripcion.slice(0, 20)))) ropaReal.push(line);
+      }
+      if (ropaReal.length) {
+        const bloqueRopa = 'ROPA_VISUAL: ' + ropaReal.join(' | ');
+        if (/ROPA_VISUAL\s*:/i.test(mapa)) {
+          mapa = mapa.replace(/ROPA_VISUAL\s*:[^\n]*/i, bloqueRopa);
+        } else {
+          mapa = mapa.replace(/(LUGAR\s*:[^\n]*)/i, '$1\n' + bloqueRopa);
+        }
+      }
+      estado.resumenConversacion = mapa.slice(0, 2800);
       log('Resumen mapa escena (' + estado.resumenConversacion.length + ' chars)');
     }
   } catch (e) {
@@ -3198,7 +3223,7 @@ system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
     estado.eventoPendienteReaccion = null;
   }
   if (estado.chicasActivas.length > 1) {
-    const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
+    const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${String(getPersonalidad(c, estado.nombreUsuario) || '').slice(0, 500)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
     system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes (TODOS deben tener bloque): ${estado.chicasActivas.join(', ')}.`;
     system += `\nOBLIGATORIO: un bloque [Nombre]: por CADA presente. Nadie desaparece del turno aunque el usuario no la nombre en el acto.`;
@@ -3256,6 +3281,12 @@ system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
 
   // System (resumen + estado) + últimos N mensajes completos + mensaje actual.
   // No se manda todo el historial: solo resumen + ventana reciente.
+  // Cap system para no pasar TPM ~8000 de Groq on_demand
+  if (system.length > 11000) {
+    log('System truncado por tamaño:', system.length, '→ 11000');
+    system = system.slice(0, 11000) + '\n[...system truncado por límite de tokens...]';
+  }
+
   const recientes = obtenerMensajesRecientesParaIA(ULTIMOS_MENSAJES_CONTEXTO);
   const userContentTurno = bloqueInventarioLooks
     ? (mensajeUsuario + '\n\n[SISTEMA — catálogo real; no inventes fuera de esto]\n' + bloqueInventarioLooks)
