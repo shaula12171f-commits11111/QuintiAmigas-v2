@@ -1321,13 +1321,102 @@ function setRelacionChica(chica, rel) {
   log('Relacion', chica, '→', rel);
 }
 
+
+/** Nombres posibles para novios NPC (si el usuario no nombra). */
+const POOL_NOMBRES_NOVIO = ['Aldo', 'Kai', 'Leo', 'Mateo', 'Riku', 'Sota', 'Haru', 'Ken', 'Dante', 'Noah'];
+
+/** NPC que es "novio de Chica", o null. */
+function nombreNovioDe(chica) {
+  if (!chica) return null;
+  const cl = String(chica);
+  for (const [npc, vin] of Object.entries(estado.vinculosNPC || {})) {
+    if (new RegExp('novio de\s+' + cl + '\b', 'i').test(String(vin || ''))) return npc;
+  }
+  return null;
+}
+
+function mensajeMencionaNoviosAnonimos(mensaje) {
+  const t = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  return /\b(sus\s+novios|su\s+novio|con\s+sus\s+novios|con\s+su\s+novio|novios\s+las|sus\s+parejas)\b/.test(t)
+    || (/\bnovios?\b/.test(t) && /\b(foll|habitacion|fiesta|con)\b/.test(t));
+}
+
+/**
+ * Si el usuario habla de "sus novios" sin nombre, asigna un nombre estable por chica.
+ */
+function asegurarNoviosNombrados(mensajeUsuario) {
+  if (!mensajeMencionaNoviosAnonimos(mensajeUsuario)) return [];
+  if (!estado.vinculosNPC) estado.vinculosNPC = {};
+  const chicas = [...new Set([
+    ...detectarChicasEnTexto(mensajeUsuario),
+    ...(estado.chicasActivas || []),
+    estado.chica
+  ].filter((c) => c && c !== 'Aldo' && typeof TODAS_CHICAS !== 'undefined' && TODAS_CHICAS.includes(c)))];
+
+  // fallback si TODAS_CHICAS no tiene includes the same way
+  const chicas2 = chicas.length ? chicas : [...new Set([
+    ...detectarChicasEnTexto(mensajeUsuario),
+    ...(estado.chicasActivas || []),
+    estado.chica
+  ].filter(Boolean))].filter((c) => c !== 'Aldo');
+
+  const lista = (chicas.length ? chicas : chicas2).filter((c) =>
+    ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia'].includes(c)
+  );
+
+  const usados = new Set(Object.keys(estado.vinculosNPC || {}));
+  const asignados = [];
+  let poolIdx = 0;
+  for (const ch of lista) {
+    if (nombreNovioDe(ch)) continue;
+    let nombre = null;
+    for (let k = 0; k < POOL_NOMBRES_NOVIO.length; k++) {
+      const cand = POOL_NOMBRES_NOVIO[(poolIdx + k) % POOL_NOMBRES_NOVIO.length];
+      if (!usados.has(cand)) {
+        nombre = cand;
+        poolIdx = (poolIdx + k + 1) % POOL_NOMBRES_NOVIO.length;
+        break;
+      }
+    }
+    if (!nombre) nombre = 'Novio' + ch;
+    estado.vinculosNPC[nombre] = 'novio de ' + ch;
+    usados.add(nombre);
+    asignados.push({ chica: ch, novio: nombre });
+    const hecho = ch + ' es novia de ' + nombre + ' (NPC asignado)';
+    if (!(estado.hechos || []).includes(hecho)) {
+      estado.hechos = [...(estado.hechos || []), hecho].slice(-24);
+    }
+    log('Novio NPC asignado:', nombre, '→', ch);
+  }
+  return asignados;
+}
+
+function textoNoviosParaPrompt() {
+  const lines = [];
+  for (const [npc, vin] of Object.entries(estado.vinculosNPC || {})) {
+    lines.push(npc + ': ' + vin);
+  }
+  if (!lines.length) return '';
+  return '## NOVIOS NPC (usá estos nombres en la narración; no digas solo "su novio")\n' +
+    lines.join('\n') +
+    '\nSi una chica tiene novio NPC, nombralo. PROHIBIDO que una chica eyacule semen.';
+}
+
 function textoMapaRelaciones() {
   const lines = [];
   const mapa = estado.relacionPorChica || {};
   const names = new Set([...(estado.chicasActivas || []), estado.chica].filter(Boolean));
-  for (const n of names) lines.push(`${n}: ${getRelacionChica(n)}`);
+  for (const n of names) {
+    if (n === 'Aldo') continue;
+    const novio = typeof nombreNovioDe === 'function' ? nombreNovioDe(n) : null;
+    if (novio) lines.push(`${n}: novia de ${novio}`);
+    else lines.push(`${n}: ${getRelacionChica(n)}`);
+  }
   for (const [n, r] of Object.entries(mapa)) {
-    if (!names.has(n)) lines.push(`${n}: ${r}`);
+    if (!names.has(n) && n !== 'Aldo') {
+      const novio = typeof nombreNovioDe === 'function' ? nombreNovioDe(n) : null;
+      lines.push(novio ? `${n}: novia de ${novio}` : `${n}: ${r}`);
+    }
   }
   for (const [n, v] of Object.entries(estado.vinculosNPC || {})) {
     lines.push(`NPC ${n}: ${v}`);
@@ -2990,6 +3079,8 @@ export async function enviarMensaje(mensajeUsuario) {
   // Corregir typos de nombres (ichiak→Ichika) antes de todo
   mensajeUsuario = corregirTyposNombresEnMensaje(mensajeUsuario);
   estado.ultimoMensajeUsuario = mensajeUsuario;
+  // Novios anónimos → nombres estables
+  try { asegurarNoviosNombrados(mensajeUsuario); } catch (e) { log('novios NPC:', e?.message || e); }
   // Hechos fijos desde el mensaje del usuario (misionero, condón, etc.) antes de que la IA responda
   registrarHechosDesdeIntercambio(mensajeUsuario, '');
   procesarCorridasDelIntercambio(mensajeUsuario, '');
@@ -3033,7 +3124,10 @@ export async function enviarMensaje(mensajeUsuario) {
   system += '\n\n## RECORDATORIO GÉNERO (este turno)\n';
   system += 'Usuario=HOMBRE (pija y bolas). Chica=MUJER. PROHIBIDO que ella diga "mi pija", "mis testículos", "me muevas la pija" o "me aprietes los testículos" como si fueran de ella. ';
   system += 'Si habla de pija/bolas, son LAS DEL USUARIO (te chupo la pija, tus bolas, etc.).\n';
-  system += '\n## FORMATO DE BLOQUES\n';
+    const bloqueNovios = typeof textoNoviosParaPrompt === 'function' ? textoNoviosParaPrompt() : '';
+  if (bloqueNovios) system += '\n\n' + bloqueNovios + '\n';
+
+system += '\n## FORMATO DE BLOQUES\n';
   system += 'Máximo UN bloque [Nombre]: por personaje en este turno. PROHIBIDO repetir [Ichika]: varias veces; juntá todo en un solo bloque por chica.\n';
   // Inventario real cosplay/ropa si el usuario pregunta
   let tipoInv = mensajePreguntaInventarioRopa(mensajeUsuario);
@@ -3538,30 +3632,20 @@ export function textoMetaEstadoUI() {
   const fase = estado.fase || 'normal';
   const partes = [];
   const nombres = [...new Set([...(estado.chicasActivas || []), estado.chica].filter(Boolean))];
+  const npcsListados = new Set();
   for (const n of nombres) {
     if (n === 'Aldo') continue;
-    const rel = getRelacionChica(n);
-    let extra = '';
-    // ¿Algún NPC es novio de esta chica?
-    for (const [npc, vin] of Object.entries(estado.vinculosNPC || {})) {
-      const v = String(vin || '').toLowerCase();
-      if (v.includes(String(n).toLowerCase()) && /novi[oa]/.test(v)) {
-        extra = ` / ${vin}`;
-        break;
-      }
+    const novio = typeof nombreNovioDe === 'function' ? nombreNovioDe(n) : null;
+    if (novio) {
+      partes.push(`${n}: novia de ${novio}`);
+      npcsListados.add(novio);
+    } else {
+      partes.push(`${n}: ${getRelacionChica(n)}`);
     }
-    partes.push(`${n}: ${rel}${extra}`);
   }
-  // NPCs presentes
-  const msgHasAldo = (estado.chicasActivas || []).includes('Aldo')
-    || Object.keys(estado.vinculosNPC || {}).includes('Aldo');
-  if (msgHasAldo || (estado.ultimaEscenaCompartida && /aldo/i.test(JSON.stringify(estado.historial?.slice?.(-2) || '')))) {
-    const vin = (estado.vinculosNPC || {}).Aldo || 'NPC';
-    partes.push(`Aldo: ${vin}`);
-  } else if ((estado.vinculosNPC || {}).Aldo) {
-    partes.push(`Aldo: ${estado.vinculosNPC.Aldo}`);
+  for (const [npc, vin] of Object.entries(estado.vinculosNPC || {})) {
+    if (!npcsListados.has(npc)) partes.push(`${npc}: ${vin}`);
   }
-  // Si hay vinculos y no se listó Aldo pero está en resumen recientes — optional skip
   if (!partes.length) {
     return `fase: ${fase} · relación: ${estado.relacion || '—'}`;
   }
