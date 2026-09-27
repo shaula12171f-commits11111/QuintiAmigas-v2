@@ -2551,6 +2551,8 @@ function esParejasCruzadasOParalelas(mensajeUsuario) {
 /** Match local estricto: mismos nombres (sin chicas de más), mismas acciones. */
 function matchLocalEscenaCompartida(disponibles, mensajeUsuario, chicas) {
   if (!disponibles.length || chicas.length < 2) return null;
+  if (mensajeEsSoloOutfitRopa(mensajeUsuario)) return null;
+
   const msg = String(mensajeUsuario || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   const slugMsg = slugEscena(mensajeUsuario);
   const names = chicas.map((c) => c.toLowerCase());
@@ -2762,6 +2764,23 @@ function resolverChicasParaCompartida(mensajeUsuario, nombresBloques = []) {
   return delMsg;
 }
 
+
+/** Usuario solo pide ropa/look/cosplay, sin acto sexual en el mensaje. */
+function mensajeEsSoloOutfitRopa(mensaje) {
+  const t = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!t.trim()) return false;
+  const pideRopa = /\b(ropa|ropas|gyaru|cosplay|cosplays|outfit|uniforme|bikini|vestid|pijama|ponete|pónganse|ponganse|vistanse|vístanse|cambiate|cambiense|look|indumentaria)\b/.test(t);
+  if (!pideRopa) return false;
+  const pideSexo = /\b(foll|cog[eé]|penetr|doggy|mision|anal|chup|mamad|corro|corren|semen|creampie|dedo|concha| coño|standfuck|cowgirl|me la |te la meto|oral|blow)\b/.test(t);
+  return !pideSexo;
+}
+
+/** Tag compartido demasiado sexual para un pedido solo de ropa. */
+function tagCompartidaEsEscenaSexual(tag, descripcion) {
+  const t = (String(tag || '') + ' ' + String(descripcion || '')).toLowerCase();
+  return /\b(foll|doggy|mision|anal|semen|concha|creampie|corr|penetr|chup|mamad|dedo|standfuck|cowgirl|derrama)\b/.test(t);
+}
+
 async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []) {
   const disponibles = [
     ...listarGrupalesDisponibles(),
@@ -2774,6 +2793,11 @@ async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []
   }
 
   const msg = String(mensajeUsuario || '').trim();
+  // Solo ropa/gyaru/cosplay → NUNCA imagen grupal de sexo (ej. quinteto creampie)
+  if (mensajeEsSoloOutfitRopa(msg)) {
+    log('Compartida: mensaje solo OUTFIT/ROPA → null (individuales por chica)');
+    return null;
+  }
   // Chicas nombradas O continuidad ("ellas") desde activas / última compartida
   const delMensaje = resolverChicasParaCompartida(msg, nombresBloques);
   const deBloques = [...new Set((nombresBloques || []).filter((n) => n && n !== 'Aldo' && n !== 'Sistema'))];
@@ -2792,7 +2816,13 @@ async function elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques = []
     return getGrupalPorTag(local.tag) || getParejaPorTag(local.tag) || getMultiHombresPorTag(local.tag) || local;
   }
 
-  const disponiblesZona = disponibles.filter((e) => !tagIncompatibleConZonasMensaje(e.tag, msg));
+  let disponiblesZona = disponibles.filter((e) => !tagIncompatibleConZonasMensaje(e.tag, msg));
+  const msgSinSexo = !/\b(foll|corro|semen|doggy|chup|penetr|cog|mamad|dedo|anal|creampie)/i.test(msg);
+  if (msgSinSexo) {
+    const antes = disponiblesZona.length;
+    disponiblesZona = disponiblesZona.filter((e) => !tagCompartidaEsEscenaSexual(e.tag, e.descripcion));
+    if (antes !== disponiblesZona.length) log('Compartida: filtrados tags sexuales (msg sin sexo)', antes - disponiblesZona.length);
+  }
   if (disponiblesZona.length < disponibles.length) {
     log('Compartida: filtrados por zona', disponibles.length - disponiblesZona.length);
   }
@@ -3480,6 +3510,10 @@ system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
     if (convieneCompartida) {
       const compartida = await elegirImagenCompartidaConQwen(mensajeUsuario, nombresBloques);
       if (compartida && compartida.url) {
+        const msgNoSexo = !/\b(foll|corro|semen|doggy|chup|penetr|cog|mamad|dedo|anal|creampie)/i.test(String(mensajeUsuario || ''));
+        if (msgNoSexo && tagCompartidaEsEscenaSexual(compartida.tag, compartida.descripcion)) {
+          log('Compartida RECHAZADA (sexual vs mensaje sin sexo):', compartida.tag);
+        } else {
         const tagLow = String(compartida.tag || '').toLowerCase();
         const nombradasEnTag = chicasMsg.filter((c) => tagLow.includes(c.toLowerCase()));
         const targets = nombradasEnTag.length ? nombradasEnTag : chicasMsg;
@@ -3501,6 +3535,7 @@ system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
           ts: Date.now()
         };
         log('Imagen compartida aplicada:', compartida.tag, '→', aplicadas, 'de', targets.join(','));
+        } // fin else no-rechazada
       } else {
         log('Imagen compartida → ninguno; se mantienen tags individuales por chica');
       }
