@@ -3140,6 +3140,7 @@ export async function enviarMensaje(mensajeUsuario) {
   if (bloqueNovios) system += '\n\n' + bloqueNovios + '\n';
 
 system += '\n## FORMATO DE BLOQUES\n';
+  system += 'DIÁLOGO vs NARRACIÓN: la narración (acciones, entorno, gestos) va entre *asteriscos* o en prosa sin raya. El diálogo del personaje empieza con raya em dash: —Hola, ¿qué hacés? PROHIBIDO mezclar diálogo dentro de *asteriscos*. Ejemplo: *Se cruza de brazos.* —¿Qué haces aquí?\n';
   system += 'Máximo UN bloque [Nombre]: por personaje en este turno. PROHIBIDO repetir [Ichika]: varias veces; juntá todo en un solo bloque por chica.\n';
   // Inventario real cosplay/ropa si el usuario pregunta
   let tipoInv = mensajePreguntaInventarioRopa(mensajeUsuario);
