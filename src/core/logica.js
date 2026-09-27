@@ -89,7 +89,8 @@ let estado = {
   corridas: [],              // [{ de, en, donde, pose, id }]
   corridasCountPorChica: {}, // { Nino: 2, Miku: 1 }
   ultimaCorrida: null,
-  ultimaEscenaCompartida: null // { tag, chicas[], ts } continuidad "ellas"
+  ultimaEscenaCompartida: null, // { tag, chicas[], ts } continuidad "ellas"
+  escenaVoyeur: false
 };
 
 const MAX_HISTORIAL = 20;
@@ -2581,6 +2582,16 @@ Reescribí el texto alineado al tag:`;
 
 
 /** "ellas", "las", "nos corremos dentro…" sin nombres → continuidad de escena */
+
+/** Escena de espiar / shh / a escondidas: miran de lejos, no conversan con los observados. */
+function detectarEscenaVoyeur(mensaje) {
+  const t = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
+  if (!t.trim()) return false;
+  const senales = /\b(shh|sh+|callate|calla|en silencio|susurr|a escondidas|escondid|espi|mir[aeá]\s+desde|desde lejos|sin que (nos |los )?vean|no (nos |los )?vean|mir[aeá]\s*\.{0,3}\s*(a |como )?\w+|est[aá](n)?\s+folland|est[aá]\s+chup)/.test(t);
+  const mirarActo = /\b(mira|mir[aá]|miren|follando|chupando|cogiendo)\b/.test(t) && /\b(shh|escond|espi|lejos|arbol|casa del arbol|sin que)\b/.test(t);
+  return !!(senales || mirarActo);
+}
+
 function mensajeRefiereEscenaPlural(mensaje) {
   const t = String(mensaje || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '');
   if (/\b(ellas|a ellas|dentro de ellas|follamos? de pie|las follamos|nos corremos|nos venimos)\b/.test(t)) return true;
@@ -3040,11 +3051,29 @@ export async function enviarMensaje(mensajeUsuario) {
   if (estado.chicasActivas.length > 1) {
     const extras = estado.chicasActivas.filter((c) => c !== estado.chica).map((c) => `### ${c}\n${getPersonalidad(c, estado.nombreUsuario)}`).join('\n\n');
     system += `\n\nOTROS PERSONAJES:\n${extras}`;
-    system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes (TODOS deben hablar): ${estado.chicasActivas.join(', ')}.`;
+    system += `\n\n⚠️ MULTI ACTIVO. Personajes presentes (TODOS deben tener bloque): ${estado.chicasActivas.join(', ')}.`;
     system += `\nOBLIGATORIO: un bloque [Nombre]: por CADA presente. Nadie desaparece del turno aunque el usuario no la nombre en el acto.`;
     system += `\nSi el usuario solo actúa con algunas, las otras REACCIONAN (celos, mirar, comentar, tocarse, pedir turno). No las omitas.`;
     system += `\nREGLA DE ROBO DE ESCENA: solo las nombradas en el acto describen la penetración/pose. Las demás no se inventan el mismo acto.`;
     system += `\nEjemplo: usuario "standfuck a Nino y Miku" con Ichika presente → [Nino]: standfuck... [Miku]: standfuck... [Ichika]: *mira con celos/interés* reacciona sin desaparecer.`;
+  
+
+    const voyeur = typeof detectarEscenaVoyeur === 'function' && detectarEscenaVoyeur(mensajeUsuario);
+    if (voyeur) {
+      estado.escenaVoyeur = true;
+      system += `\n\n## ESCENA VOYEUR / A ESCONDIDAS (OBLIGATORIO ESTE TURNO)\n`;
+      system += `El usuario y su compañera ESTÁN ESPIANDO o mirando de lejos (shh, a escondidas, etc.).\n`;
+      system += `1) Quienes ESTÁN EN EL ACTO observado: dialogan y actúan SOLO ENTRE ELLOS. PROHIBIDO dirigirse al usuario o a la compañera (nada de "Fabrizio no te asustes", "Miku mirá", "¿te gusta lo que ves?"). No saben que los miran, salvo que el usuario diga que los descubren.\n`;
+      system += `2) Quien MIRA con el usuario: solo susurra/reacciona en voz baja con el usuario. PROHIBIDO meter diálogo de los observados dentro de su bloque.\n`;
+      system += `3) Un bloque [Nombre] limpio por personaje; sin mezclar voces.\n`;
+      log('Escena VOYEUR activa');
+    } else if (estado.escenaVoyeur && /\b(nos (vieron|descub)|nos cacharon|salimos|los interrump)/i.test(String(mensajeUsuario || ''))) {
+      estado.escenaVoyeur = false;
+      system += `\n\n## Ya no es voyeur: los descubrieron o se acercaron; puede haber diálogo cruzado.\n`;
+    } else if (estado.escenaVoyeur) {
+      system += `\n\n## Sigue clima voyeur: los observados no hablan al usuario salvo descubrimiento explícito.\n`;
+    }
+
   }
 
   const intencion = resolverIntencionUsuario(mensajeUsuario);
