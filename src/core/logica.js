@@ -337,11 +337,16 @@ function procesarCorridasDelIntercambio(mensajeUsuario, respuestaBot = '') {
   const chicas = ['ichika', 'nino', 'miku', 'yotsuba', 'itsuki', 'emilia'];
   function targetEnFragmento(frag) {
     // "en la cara de nino" / "en la boca de ichika" / "dentro de nino"
+    const f = String(frag || '').toLowerCase();
     for (const cl of chicas) {
-      if (new RegExp(`\b(de|en|a|dentro\s+de)\s+${cl}\b`).test(frag)) return canonChicaNombre(cl);
+      if (new RegExp('(?:en|de|a|dentro\\s+de)\\s+(?:la\\s+|su\\s+)?(?:cara|boca|concha|culo)?\\s*(?:de\\s+)?' + cl + '\\b').test(f)) {
+        return canonChicaNombre(cl);
+      }
+      if (new RegExp('\\b(?:cara|boca|rostro)\\s+de\\s+' + cl + '\\b').test(f)) return canonChicaNombre(cl);
+      if (new RegExp('\\b(?:de|en|a)\\s+' + cl + '\\b').test(f)) return canonChicaNombre(cl);
     }
     for (const cl of chicas) {
-      if (new RegExp(`\b${cl}\b`).test(frag)) return canonChicaNombre(cl);
+      if (new RegExp('\\b' + cl + '\\b').test(f)) return canonChicaNombre(cl);
     }
     return null;
   }
@@ -399,7 +404,7 @@ function procesarCorridasDelIntercambio(mensajeUsuario, respuestaBot = '') {
       }[c.donde] || c.donde;
       addHechoFijo(
         `CORRIDAS: ${c.de} se corrió ${dondeTxt} de/en ${c.en}${c.pose ? ' en pose ' + c.pose : ''} (#${estado.corridasCountPorChica[c.en] || 1} en ${c.en})`,
-        `CORRIDAS: ${c.de} se corrió`
+        `CORRIDAS: ${c.de} se corrió ${dondeTxt} de/en ${c.en}`
       );
     }
   }
@@ -1275,15 +1280,8 @@ function registrarHechosDesdeIntercambio(mensajeUsuario, respuestaBot = '') {
   if (/\b(saco|saque|saqué|quitar)\b.*\bcondon|\bsin condon\b/.test(uLow)) {
     addHechoFijo('Usuario se quitó / dejó de usar el condón');
   }
-  const ch = estado.chica || 'la chica';
-  if (/\b(me corro|me corrí|eyacul)\b/.test(uLow) && /\bcara|facial|rostro\b/.test(uLow)) {
-    // a quién
-    let target = ch;
-    for (const cl of chicas) {
-      if (new RegExp(`\\b${cl}\\b`).test(uLow)) { target = canon(cl); break; }
-    }
-    addHechoFijo(`Usuario se corrió en la cara de ${target}`, `se corrió en la cara`);
-  }
+    // Facials: solo procesarCorridasDelIntercambio (por cláusula).
+
 
   // Desde respuesta: poses por bloque implícito (si bot describe doggy de alguien)
   if (bLow) {
@@ -1587,6 +1585,8 @@ function construirContexto(mensajeUsuarioActual = '') {
     `Mapa de relaciones: ${typeof textoMapaRelaciones === 'function' ? textoMapaRelaciones() : estado.relacion}`,
     'Usuario = HOMBRE (pija y bolas). Las chicas = MUJERES (sin pija ni testículos).',
     'GÉNERO: PROHIBIDO que la chica hable como si tuviera pija o testículos. Las bolas/pija son del usuario.',
+    'POSESIÓN: ella dice "no soy tuya" / "no me haces tuya", NUNCA "no me hace mía" (ella no es dueña masculina de sí en ese sentido).',
+    'CORRIDAS: si A se corre en la cara de B, el semen queda en B, no en la cara de A. Aldo no describe semen en su propia cara si eyaculó sobre una chica.',
     `Chica principal: ${estado.chica}`,
     `Presentes: ${estado.chicasActivas.join(', ')}`
   ];
