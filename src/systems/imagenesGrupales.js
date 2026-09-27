@@ -17,6 +17,12 @@ const CHICAS_VALIDAS = ['Ichika', 'Nino', 'Miku', 'Yotsuba', 'Itsuki', 'Emilia']
 //  DUOS (2 chicas)
 // ---------------------------------------------------------------------------
 const DUOS = {
+  nino_miku_doble_mamada_nino_chupa_mis_bolas_mientras_miku_chupa_mi_pene: {
+    url: 'https://raw.githubusercontent.com/SORFAR123123/Putas-de-fabri/main/imagenes/img_1772839068623.jpg',
+    descripcion: 'nino_miku_doble_mamada_nino_chupa_mis_bolas_mientras_miku_chupa_mi_pene',
+    audio: ''
+  },
+
   nino_miku_doble_mamada_miku_chupa_mis_bolas_mientras_nino_chupa_mi_pene: {
     url: 'https://raw.githubusercontent.com/SORFAR123123/Putas-de-fabri/main/imagenes/img_1772839012283.jpg',
     descripcion: 'nino_miku_doble_mamada_miku_chupa_mis_bolas_mientras_nino_chupa_mi_pene',
