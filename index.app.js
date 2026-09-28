@@ -1,3 +1,22 @@
+
+const LS_RESPUESTAS_CORTAS = 'quinti_respuestas_cortas';
+function getRespuestasCortas() {
+  try { return localStorage.getItem(LS_RESPUESTAS_CORTAS) === '1'; } catch (_) { return false; }
+}
+function setRespuestasCortas(on) {
+  try { localStorage.setItem(LS_RESPUESTAS_CORTAS, on ? '1' : '0'); } catch (_) {}
+}
+function syncBtnRespuestasCortas() {
+  const btn = $('btn-respuestas-cortas');
+  if (!btn) return;
+  const on = getRespuestasCortas();
+  btn.textContent = on ? '⚡ Cortas' : '📝 Normal';
+  btn.classList.toggle('mode-on', on);
+  btn.title = on
+    ? 'Respuestas CORTAS activas (click = volver a normales)'
+    : 'Respuestas NORMALES (click = activar cortas)';
+}
+
 import {
   setNombreUsuario, iniciarChatLibre, iniciarChatLasCinco, iniciarHistoria, enviarMensaje,
   regenerarUltimaRespuesta, resetChat, volverAlSelector, getEstado, getResumenConversacion, textoMetaEstadoUI,
@@ -245,6 +264,16 @@ if ($('btn-chat-libre')) $('btn-chat-libre').onclick = async () => {
 };
 if ($('btn-volver-selector')) $('btn-volver-selector').onclick = () => show('screen-select');
 if ($('btn-salir-chat')) $('btn-salir-chat').onclick = () => { stopAllAudio(); volverAlSelector(); show('screen-select'); };
+
+if ($('btn-respuestas-cortas')) {
+  syncBtnRespuestasCortas();
+  $('btn-respuestas-cortas').onclick = () => {
+    const next = !getRespuestasCortas();
+    setRespuestasCortas(next);
+    syncBtnRespuestasCortas();
+  };
+}
+
 if ($('btn-reset')) $('btn-reset').onclick = () => { if (confirm('¿Reset?')) { stopAllAudio(); resetChat(); $('msgs').innerHTML=''; } };
 
 async function send() {
