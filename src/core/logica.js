@@ -1615,6 +1615,86 @@ function actualizarFaseYLugar(mensaje) {
 
 
 /** Últimos N mensajes del historial local para mandar completos a la IA (además del resumen). */
+
+/** Preferencia UI: respuestas cortas (localStorage quinti_respuestas_cortas=1). */
+function preferirRespuestasCortas() {
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('quinti_respuestas_cortas') === '1') return true;
+  } catch (_) {}
+  return false;
+}
+
+/**
+ * Si el system supera maxChars, recorta por bloques prioritarios y loguea qué se priorizó / perdió.
+ */
+function acotarSystemConPrioridad(system, maxChars = 11000) {
+  const s = String(system || '');
+  if (s.length <= maxChars) return s;
+
+  // Dividir por secciones ## o \n\n##
+  const parts = [];
+  const re = /(?:^|\n)(##[^\n]*)/g;
+  let last = 0;
+  let m;
+  const marks = [];
+  while ((m = re.exec(s)) !== null) {
+    marks.push({ i: m.index + (m[0].startsWith('\n') ? 1 : 0), title: m[1] || m[0].trim() });
+  }
+  if (!marks.length) {
+    const kept = s.slice(0, maxChars);
+    const lost = s.slice(maxChars);
+    console.warn('[Quinti] System truncado (sin secciones)', s.length, '→', maxChars,
+      '| perdido ~', lost.length, 'chars del final');
+    return kept + '\n[...system truncado por límite de tokens...]';
+  }
+
+  // Prioridad: título contiene keyword
+  function prio(title) {
+    const t = String(title || '').toLowerCase();
+    if (/hecho|corrida|relacion|mapa de escena|resumen|genero|apariencia|formato de bloque|novios npc|ropa/.test(t)) return 0;
+    if (/estilo|memoria|arco|continuidad|multi|personalidad/.test(t)) return 1;
+    if (/voyeur|inventario|outfit/.test(t)) return 2;
+    return 3;
+  }
+
+  const chunks = [];
+  for (let i = 0; i < marks.length; i++) {
+    const start = marks[i].i;
+    const end = i + 1 < marks.length ? marks[i + 1].i : s.length;
+    chunks.push({ title: marks[i].title, body: s.slice(start, end), p: prio(marks[i].title) });
+  }
+  // Prefijo antes del primer ##
+  const prefix = s.slice(0, marks[0].i);
+
+  let out = prefix;
+  const keptTitles = [];
+  const droppedTitles = [];
+  // Greedy by priority (no reordenar chunks originales)
+  const ordered = chunks.slice().sort((a, b) => a.p - b.p);
+  const selected = new Set();
+  for (const c of ordered) {
+    if (out.length + c.body.length <= maxChars - 80) {
+      selected.add(c.title);
+      keptTitles.push(c.title.replace(/^##\s*/, '').slice(0, 40));
+    } else {
+      droppedTitles.push(c.title.replace(/^##\s*/, '').slice(0, 40) + ' (p' + c.p + ')');
+    }
+  }
+  // Rebuild in original order
+  out = prefix;
+  for (const c of chunks) {
+    if (selected.has(c.title)) out += c.body;
+  }
+  if (out.length > maxChars) out = out.slice(0, maxChars);
+
+  console.warn(
+    '[Quinti] System truncado', s.length, '→', out.length,
+    '\n  Priorizado:', keptTitles.join(' | ') || '(prefijo)',
+    '\n  Omitido:', droppedTitles.join(' | ') || '(cola)'
+  );
+  return out + '\n[...system recortado por prioridad/tokens...]';
+}
+
 function obtenerMensajesRecientesParaIA(n = ULTIMOS_MENSAJES_CONTEXTO) {
   const h = Array.isArray(estado.historial) ? estado.historial : [];
   if (!h.length || n <= 0) return [];
@@ -3223,10 +3303,14 @@ system += '\n## FORMATO DE BLOQUES\n';
 
   system += 'Si el usuario pide un look (gyaru, bikini, idol, cosplay) y existe en el catálogo, la narración de ropa DEBE coincidir con la descripción del tag de ese look. NO inventes otra ropa genérica.\n';
 system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
-  system += 'Escribí en PROSA NARRATIVA densa: mínimo 2–4 párrafos por personaje activo; más si el usuario da libertad, cambia de día/lugar o pide que continúes. ';
-  system += 'Incluí lugar, luz, ropa/cuerpo, gestos, silencios, miradas y diálogo natural. Suena a ficción erótica bien escrita, no a chat corto. ';
-  system += 'Si el usuario avanza el tiempo (mañana, oficina, fiesta, una semana), narrá el salto de escena con claridad. ';
-  system += 'NPCs con voz propia. PROHIBIDO respuestas de 1–2 líneas en turnos de escena.\n';
+  if (preferirRespuestasCortas()) {
+    system += 'MODO RESPUESTAS CORTAS (UI): máximo 2–5 oraciones por personaje. Diálogo con raya —. Narración breve. PROHIBIDO párrafos largos de novela. Una idea clara por chica.\n';
+  } else {
+    system += 'Escribí en PROSA NARRATIVA densa: mínimo 2–4 párrafos por personaje activo; más si el usuario da libertad, cambia de día/lugar o pide que continúes. ';
+    system += 'Incluí lugar, luz, ropa/cuerpo, gestos, silencios, miradas y diálogo natural. Suena a ficción erótica bien escrita, no a chat corto. ';
+    system += 'Si el usuario avanza el tiempo (mañana, oficina, fiesta, una semana), narrá el salto de escena con claridad. ';
+    system += 'NPCs con voz propia. PROHIBIDO respuestas de 1–2 líneas en turnos de escena.\n';
+  }
   system += '\n## MEMORIA Y ARCO\n';
   system += 'Usá el MAPA DE ESCENA (PRESENTES, ACCIONES, HECHOS, CORRIDAS, RELACIONES). No inventes corridas ni contradigas HECHOS_FIJOS. ';
   system += 'Si hubo celular/foto, reaccioná pero no borres el acto o charla en curso. Recordá quién es novia de quién y con quién está cada una.\n';
@@ -3311,10 +3395,9 @@ system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
 
   // System (resumen + estado) + últimos N mensajes completos + mensaje actual.
   // No se manda todo el historial: solo resumen + ventana reciente.
-  // Cap system para no pasar TPM ~8000 de Groq on_demand
+  // Cap system para no pasar TPM ~8000 de Groq on_demand (con log de prioridad)
   if (system.length > 11000) {
-    log('System truncado por tamaño:', system.length, '→ 11000');
-    system = system.slice(0, 11000) + '\n[...system truncado por límite de tokens...]';
+    system = acotarSystemConPrioridad(system, 11000);
   }
 
   const recientes = obtenerMensajesRecientesParaIA(ULTIMOS_MENSAJES_CONTEXTO);
@@ -3327,7 +3410,7 @@ system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
     { role: 'user', content: userContentTurno }
   ];
   log('Contexto IA: resumen=' + ((estado.resumenConversacion || '').length) + ' chars, mensajes recientes=' + recientes.length);
-  let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)', max_tokens: 2200, temperature: 1.05 });
+  let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)', max_tokens: preferirRespuestasCortas() ? 700 : 2200, temperature: preferirRespuestasCortas() ? 0.9 : 1.05 });
   let parsed = parseJsonRespuesta(raw);
   if (!parsed) {
     for (const extra of PROMPTS_REINTENTO) {
