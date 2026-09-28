@@ -19,6 +19,7 @@ h1{text-align:center;color:var(--accent);margin-bottom:8px;font-size:1.8rem}
 .btn.ghost{background:transparent;border:2px solid var(--line);color:var(--accent)}
 .btn.block{width:100%}
 .btn.sm{padding:8px 12px;font-size:.85rem;border-radius:10px}
+.btn.sm.mode-on{background:linear-gradient(135deg,#059669,#10b981)!important;border-color:#34d399;color:#fff}
 .btn.danger{background:linear-gradient(135deg,#b91c1c,#ef4444)}
 .btn.mem-save{background:linear-gradient(135deg,#059669,#10b981)}
 .btn.multi{background:linear-gradient(135deg,#db2777,#f59e0b);margin-top:16px}
@@ -103,6 +104,7 @@ h1{text-align:center;color:var(--accent);margin-bottom:8px;font-size:1.8rem}
 <div class="chat-shell">
 <div class="chat-top"><div><div class="who" id="chat-who">Nino</div><div class="meta" id="chat-meta">fase: normal</div></div>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
+<button class="btn sm ghost" id="btn-respuestas-cortas" title="Alternar respuestas cortas / normales">📝 Normal</button>
 <button class="btn sm ghost" id="btn-apis-chat">🔑 APIs</button>
 <button class="btn sm mem-save" id="btn-guardar-mem">💾 Guardar</button>
 <button class="btn sm ghost" id="btn-memorias">📚 Memorias</button>
