@@ -3304,7 +3304,12 @@ system += '\n## FORMATO DE BLOQUES\n';
   system += 'Si el usuario pide un look (gyaru, bikini, idol, cosplay) y existe en el catálogo, la narración de ropa DEBE coincidir con la descripción del tag de ese look. NO inventes otra ropa genérica.\n';
 system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
   if (preferirRespuestasCortas()) {
-    system += 'MODO RESPUESTAS CORTAS (UI): máximo 2–5 oraciones por personaje. Diálogo con raya —. Narración breve. PROHIBIDO párrafos largos de novela. Una idea clara por chica.\n';
+    system += '## MODO RESPUESTAS CORTAS (OBLIGATORIO — UI)\n';
+    system += 'PRIORIDAD MÁXIMA sobre cualquier otra regla de longitud o novela.\n';
+    system += '- Máximo 3 oraciones por personaje (mejor 2).\n';
+    system += '- 1 frase de acción breve + 1–2 de diálogo con raya —.\n';
+    system += '- PROHIBIDO: párrafos largos, descripciones de luz/ambiente extensas, monólogos.\n';
+    system += '- Si el usuario dice poco (ej. vamos a una fiesta), respondé corto igual.\n';
   } else {
     system += 'Escribí en PROSA NARRATIVA densa: mínimo 2–4 párrafos por personaje activo; más si el usuario da libertad, cambia de día/lugar o pide que continúes. ';
     system += 'Incluí lugar, luz, ropa/cuerpo, gestos, silencios, miradas y diálogo natural. Suena a ficción erótica bien escrita, no a chat corto. ';
@@ -3399,6 +3404,12 @@ system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
   if (system.length > 11000) {
     system = acotarSystemConPrioridad(system, 11000);
   }
+  // Cortas: reinyectar al FINAL (así no lo come el truncado)
+  if (preferirRespuestasCortas()) {
+    system += '\n\n## MODO CORTAS ACTIVO (OBLIGATORIO)\n';
+    system += 'Respuesta ULTRA breve: máx 3 oraciones por chica. Acción corta + diálogo con —. Cero novela.\n';
+    log('UI: modo RESPUESTAS CORTAS activo');
+  }
 
   const recientes = obtenerMensajesRecientesParaIA(ULTIMOS_MENSAJES_CONTEXTO);
   const userContentTurno = bloqueInventarioLooks
@@ -3410,7 +3421,7 @@ system += '\n## ESTILO DE ESCRITURA (NOVELA / ESCENA)\n';
     { role: 'user', content: userContentTurno }
   ];
   log('Contexto IA: resumen=' + ((estado.resumenConversacion || '').length) + ' chars, mensajes recientes=' + recientes.length);
-  let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)', max_tokens: preferirRespuestasCortas() ? 700 : 2200, temperature: preferirRespuestasCortas() ? 0.9 : 1.05 });
+  let raw = await llamarGroq(messages, { proposito: 'respuesta-chat (MODELO)', max_tokens: preferirRespuestasCortas() ? 320 : 2200, temperature: preferirRespuestasCortas() ? 0.85 : 1.05 });
   let parsed = parseJsonRespuesta(raw);
   if (!parsed) {
     for (const extra of PROMPTS_REINTENTO) {
